@@ -56,16 +56,8 @@ public class OsvClient {
             log.info("[OsvClient#checkDependency Checking vulnerabilities for {} {} in {}]", packageName, version, ecosystem);
 
             try {
-                OsvPackage osvPackage = OsvPackage.builder()
-                        .name(packageName)
-                        .ecosystem(ecosystem)
-                        .version(version)
-                        .build();
-
-                OsvQuery query = OsvQuery.builder()
-                        .version(version)
-                        .packageInfo(osvPackage)
-                        .build();
+                OsvPackage osvPackage = new OsvPackage(packageName, ecosystem, version);
+                OsvQuery query = new OsvQuery(version, osvPackage);
 
                 String requestBody = objectMapper.writeValueAsString(query);
 

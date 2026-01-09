@@ -1,9 +1,5 @@
 package com.projectsapo.model;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Builder;
-import lombok.extern.jackson.Jacksonized;
-
 import java.util.Objects;
 
 /**
@@ -13,12 +9,10 @@ import java.util.Objects;
  * @param ecosystem The ecosystem of the package (e.g., "Maven").
  * @param version   The specific version of the package.
  */
-@Builder
-@Jacksonized
 public record OsvPackage(
-        @JsonProperty("name") String name,
-        @JsonProperty("ecosystem") String ecosystem,
-        @JsonProperty("version") String version
+        String name,
+        String ecosystem,
+        String version
 ) {
 
     public OsvPackage {

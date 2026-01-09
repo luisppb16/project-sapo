@@ -1,8 +1,6 @@
 package com.projectsapo.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Builder;
-import lombok.extern.jackson.Jacksonized;
 
 import java.util.Objects;
 
@@ -12,10 +10,8 @@ import java.util.Objects;
  * @param version The version of the package.
  * @param packageInfo The package details.
  */
-@Builder
-@Jacksonized
 public record OsvQuery(
-        @JsonProperty("version") String version,
+        String version,
         @JsonProperty("package") OsvPackage packageInfo
 ) {
 
