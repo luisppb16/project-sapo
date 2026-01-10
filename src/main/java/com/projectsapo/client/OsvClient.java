@@ -5,7 +5,6 @@ import com.projectsapo.model.OsvPackage;
 import com.projectsapo.model.OsvQuery;
 import com.projectsapo.model.OsvResponse;
 import com.projectsapo.util.ProjectConstants;
-import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.net.URI;
@@ -23,7 +22,6 @@ import java.util.concurrent.Executors;
  * Client for interacting with the OSV.dev API to check for vulnerabilities.
  * Uses Java 21 Virtual Threads for asynchronous execution.
  */
-@Slf4j
 public class OsvClient {
 
     private final HttpClient httpClient;
@@ -53,8 +51,6 @@ public class OsvClient {
         Objects.requireNonNull(ecosystem, "Ecosystem cannot be null");
 
         return CompletableFuture.supplyAsync(() -> {
-            log.info("[OsvClient#checkDependency Checking vulnerabilities for {} {} in {}]", packageName, version, ecosystem);
-
             try {
                 OsvPackage osvPackage = new OsvPackage(packageName, ecosystem, version);
                 OsvQuery query = new OsvQuery(version, osvPackage);
@@ -70,24 +66,17 @@ public class OsvClient {
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
                 if (response.statusCode() == 200) {
-                    // OSV returns {} (empty object) if no vulnerabilities are found, which maps to null list in OsvResponse if not careful
-                    // But our record has ignoreUnknown, so it should be fine.
-                    // If "vulns" is missing, it means no vulnerabilities.
                     if (response.body().equals("{}")) {
-                         log.debug("[OsvClient#checkDependency No vulnerabilities found for {}]", packageName);
                          return Optional.empty();
                     }
 
                     OsvResponse osvResponse = objectMapper.readValue(response.body(), OsvResponse.class);
-                    log.debug("[OsvClient#checkDependency Found vulnerabilities for {}]", packageName);
                     return Optional.of(osvResponse);
                 } else {
-                    log.warn("[OsvClient#checkDependency API returned status code: {}]", response.statusCode());
                     return Optional.empty();
                 }
 
             } catch (IOException | InterruptedException e) {
-                log.error("[OsvClient#checkDependency Error querying OSV API: {}]", e.getMessage());
                 if (e instanceof InterruptedException) {
                     Thread.currentThread().interrupt();
                 }

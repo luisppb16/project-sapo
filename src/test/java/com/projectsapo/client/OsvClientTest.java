@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Luis Paolo Pepe Barra (LuisPPB16).
+ * All rights reserved.
+ */
+
 package com.projectsapo.client;
 
 import com.projectsapo.model.OsvResponse;
