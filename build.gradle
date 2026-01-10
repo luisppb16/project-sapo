@@ -1,0 +1,59 @@
+/*
+ * Copyright (c) 2026 Luis Paolo Pepe Barra (LuisPPB16).
+ * All rights reserved.
+ */
+
+plugins {
+    id 'java'
+    id 'org.jetbrains.intellij.platform' version '2.3.0'
+}
+
+group = 'com.projectsapo'
+version = '1.0.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+    maven { url 'https://repo.gradle.org/gradle/libs-releases' }
+    intellijPlatform {
+        defaultRepositories()
+    }
+}
+
+dependencies {
+    // Lombok
+    compileOnly 'org.projectlombok:lombok:1.18.36'
+    annotationProcessor 'org.projectlombok:lombok:1.18.36'
+
+    // SAST - JavaParser
+    implementation 'com.github.javaparser:javaparser-core:3.26.2'
+
+    // JSON - Jackson
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+
+    // SCA - Gradle Tooling API
+    implementation 'org.gradle:gradle-tooling-api:8.10'
+
+    // Testing
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
+    testImplementation 'org.mockito:mockito-core:5.11.0'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.11.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    intellijPlatform {
+        intellijIdeaCommunity '2024.3'
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs << "-Xlint:all" << "-Werror" << "-Xlint:-processing" << "-Xlint:-unchecked"
+}
+
+test {
+    useJUnitPlatform()
+}

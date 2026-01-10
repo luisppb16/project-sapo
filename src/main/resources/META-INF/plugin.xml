@@ -1,0 +1,28 @@
+<idea-plugin>
+    <id>com.projectsapo</id>
+    <name>Project Sapo</name>
+    <vendor email="user@example.com" url="http://www.example.com">Project Sapo</vendor>
+
+    <description><![CDATA[
+    Plugin description for Project Sapo.<br>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Project Sapo"
+                    secondary="true"
+                    icon="/META-INF/pluginIcon.svg"
+                    anchor="bottom"
+                    factoryClass="com.projectsapo.ui.SapoToolWindowFactory"/>
+    </extensions>
+
+    <actions>
+        <action id="com.projectsapo.action.CheckVulnerabilitiesAction"
+                class="com.projectsapo.action.CheckVulnerabilitiesAction"
+                text="Check Vulnerabilities"
+                description="Checks project dependencies for known vulnerabilities using OSV.dev">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>
