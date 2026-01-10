@@ -22,3 +22,10 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+build/idea-sandbox/IC-2024.3/system/index/shared_indexes/sih.org.jetbrains.kotlin.idea.versions.KotlinJsMetadataVersionIndex/sih.org.jetbrains.kotlin.idea.versions.KotlinJsMetadataVersionIndex_storage.storage_i.len
+build/idea-sandbox/IC-2024.3/system/index/trigram.index/Trigram.Index_inputs.values.at
+/build/idea-sandbox
+/.gradle
+/.idea
+.intellijPlatform/self-update.lock
+/build
