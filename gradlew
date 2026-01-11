@@ -1,7 +1,7 @@
 #!/bin/sh
 
 #
-# Copyright (c) 2026 Luis Paolo Pepe Barra (LuisPPB16).
+# Copyright (c) 2026 Luis Paolo Pepe Barra (@LuisPPB16).
 # All rights reserved.
 #
 

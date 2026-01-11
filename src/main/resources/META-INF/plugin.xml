@@ -1,13 +1,41 @@
+<!--
+  ~ Copyright (c) 2026 Luis Paolo Pepe Barra (@LuisPPB16).
+  ~ All rights reserved.
+  -->
+
 <idea-plugin>
     <id>com.projectsapo</id>
     <name>Project Sapo</name>
-    <vendor email="user@example.com" url="http://www.example.com">Project Sapo</vendor>
+    <vendor email="ironkrozz@gmail.com">Luis Pepe</vendor>
 
     <description><![CDATA[
-    Plugin description for Project Sapo.<br>
+    A smart vulnerability scanner for your project dependencies.
+
+    Project Sapo integrates directly into your IDE to detect security vulnerabilities in your Gradle and Maven dependencies.
+    It leverages the OSV.dev database to provide real-time alerts and detailed remediation advice without leaving your workflow.
+
+    <h2>Main Features</h2>
+    <ul>
+        <li><b>Automated Scanning:</b> Detects vulnerabilities in Gradle and Maven projects automatically.</li>
+        <li><b>Real-time Alerts:</b> Get instant notifications about security risks in your dependencies.</li>
+        <li><b>Detailed Reports:</b> View comprehensive vulnerability details, including summaries, severity, and fixed versions.</li>
+        <li><b>Integrated Tool Window:</b> A dedicated "Project Sapo" tool window for managing and reviewing scan results.</li>
+        <li><b>Direct References:</b> One-click access to official security advisories (CVE, GHSA, etc.).</li>
+        <li><b>Visual Indicators:</b> Clear visual cues for safe vs. vulnerable packages.</li>
+    </ul>
     ]]></description>
 
+    <change-notes><![CDATA[
+        <ul>
+            <li><b>Initial Release:</b> First public release of Project Sapo.</li>
+            <li><b>Gradle & Maven Support:</b> Full support for parsing dependencies from both Gradle and Maven build systems.</li>
+            <li><b>OSV.dev Integration:</b> Connects to the Open Source Vulnerabilities database for up-to-date security info.</li>
+            <li><b>Interactive UI:</b> Added a dedicated Tool Window with sorting, filtering, and detailed HTML reports.</li>
+        </ul>
+    ]]></change-notes>
+
     <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.idea.maven</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Project Sapo"
@@ -16,13 +44,4 @@
                     anchor="bottom"
                     factoryClass="com.projectsapo.ui.SapoToolWindowFactory"/>
     </extensions>
-
-    <actions>
-        <action id="com.projectsapo.action.CheckVulnerabilitiesAction"
-                class="com.projectsapo.action.CheckVulnerabilitiesAction"
-                text="Project Sapo -> Check"
-                description="Checks project dependencies for known vulnerabilities using OSV.dev">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
-        </action>
-    </actions>
 </idea-plugin>

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 Luis Paolo Pepe Barra (LuisPPB16).
+ * Copyright (c) 2026 Luis Paolo Pepe Barra (@LuisPPB16).
  * All rights reserved.
  */
 
@@ -41,6 +41,8 @@ dependencies {
 
     intellijPlatform {
         intellijIdeaCommunity '2024.3'
+        // Bundle the Maven plugin so we can compile against its API
+        bundledPlugin 'org.jetbrains.idea.maven'
     }
 }
 

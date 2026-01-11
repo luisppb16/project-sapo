@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 Luis Paolo Pepe Barra (LuisPPB16).
+ * Copyright (c) 2026 Luis Paolo Pepe Barra (@LuisPPB16).
  * All rights reserved.
  */
 
@@ -12,6 +12,8 @@ import org.gradle.tooling.ProjectConnection;
 import org.gradle.tooling.model.idea.IdeaModule;
 import org.gradle.tooling.model.idea.IdeaProject;
 import org.gradle.tooling.model.idea.IdeaSingleEntryLibraryDependency;
+import org.jetbrains.idea.maven.project.MavenProject;
+import org.jetbrains.idea.maven.project.MavenProjectsManager;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -19,15 +21,12 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
  * Utility class to parse dependencies from the project.
- * Currently supports Gradle projects via Gradle Tooling API.
+ * Supports Gradle (via Tooling API) and Maven (via IntelliJ Maven Plugin).
  */
 public class DependencyParser {
-
-    private static final Pattern GRADLE_DEPENDENCY_PATTERN = Pattern.compile("([\\w\\.-]+):([\\w\\.-]+):([\\w\\.-]+)");
 
     /**
      * Extracts dependencies from the given project.
@@ -44,22 +43,25 @@ public class DependencyParser {
         }
 
         File projectDir = new File(basePath);
-        // Check if it's a Gradle project
+        
+        // Check for Gradle
         if (new File(projectDir, "build.gradle").exists() || new File(projectDir, "build.gradle.kts").exists()) {
             dependencies.addAll(parseGradleDependencies(projectDir));
         }
 
-        // Future: Add Maven support here
+        // Check for Maven
+        if (MavenProjectsManager.getInstance(project).hasProjects()) {
+            dependencies.addAll(parseMavenDependencies(project));
+        }
 
         // Deduplicate and sort
         return dependencies.stream()
-                .distinct() // OsvPackage is a record, so equals/hashCode are based on fields
+                .distinct()
                 .sorted(Comparator.comparing(OsvPackage::name))
                 .toList();
     }
 
     private static List<OsvPackage> parseGradleDependencies(File projectDir) {
-        // Use a Set to avoid duplicates during collection if possible, though stream distinct handles it later
         Set<OsvPackage> dependencies = new HashSet<>();
         GradleConnector connector = GradleConnector.newConnector();
         connector.forProjectDirectory(projectDir);
@@ -86,6 +88,25 @@ public class DependencyParser {
             }
         } catch (Exception e) {
             System.err.println("Error parsing Gradle dependencies: " + e.getMessage());
+        }
+        
+        return new ArrayList<>(dependencies);
+    }
+
+    private static List<OsvPackage> parseMavenDependencies(Project project) {
+        Set<OsvPackage> dependencies = new HashSet<>();
+        MavenProjectsManager projectsManager = MavenProjectsManager.getInstance(project);
+        
+        for (MavenProject mavenProject : projectsManager.getProjects()) {
+            mavenProject.getDependencies().forEach(dep -> {
+                String group = dep.getGroupId();
+                String name = dep.getArtifactId();
+                String version = dep.getVersion();
+                
+                if (group != null && name != null && version != null) {
+                    dependencies.add(new OsvPackage(group + ":" + name, "Maven", version));
+                }
+            });
         }
         
         return new ArrayList<>(dependencies);
