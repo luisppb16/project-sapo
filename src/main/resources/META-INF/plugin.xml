@@ -11,9 +11,9 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Project Sapo"
-                    secondary="true"
+                    secondary="false"
                     icon="/META-INF/pluginIcon.svg"
-                    anchor="bottom"
+                    anchor="left"
                     factoryClass="com.projectsapo.ui.SapoToolWindowFactory"/>
     </extensions>
 

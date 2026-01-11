@@ -15,6 +15,7 @@ import com.projectsapo.service.VulnerabilityScannerService;
 import javax.swing.*;
 import javax.swing.event.HyperlinkEvent;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 import javax.swing.text.html.HTMLEditorKit;
 import javax.swing.text.html.StyleSheet;
 import java.awt.*;
@@ -28,6 +29,8 @@ public class SapoToolWindow {
     private final DefaultTableModel tableModel;
     private final JEditorPane detailsPane;
     private final Project project;
+    private final JButton scanButton;
+    private final JLabel statusLabel;
     private final List<VulnerabilityScannerService.ScanResult> scanResults = new ArrayList<>();
 
     public SapoToolWindow(Project project, ToolWindow toolWindow) {
@@ -36,9 +39,14 @@ public class SapoToolWindow {
 
         // Toolbar
         JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton scanButton = new JButton("Scan Dependencies");
+        scanButton = new JButton("Scan Dependencies");
         scanButton.addActionListener(e -> runScan());
+        
+        statusLabel = new JLabel("");
+        statusLabel.setBorder(JBUI.Borders.emptyLeft(10));
+        
         toolbar.add(scanButton);
+        toolbar.add(statusLabel);
         content.add(toolbar, BorderLayout.NORTH);
 
         // Splitter
@@ -51,14 +59,36 @@ public class SapoToolWindow {
             public boolean isCellEditable(int row, int column) {
                 return false;
             }
+            
+            // Define column types for proper sorting
+            @Override
+            public Class<?> getColumnClass(int columnIndex) {
+                if (columnIndex == 2) return Integer.class; // Vulns count
+                return String.class;
+            }
         };
         resultsTable = new JBTable(tableModel);
         resultsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        
+        // Enable sorting
+        resultsTable.setAutoCreateRowSorter(true);
+        TableRowSorter<DefaultTableModel> sorter = new TableRowSorter<>(tableModel);
+        resultsTable.setRowSorter(sorter);
+        
+        // Default sort by Dependency name (column 0) ascending
+        sorter.setSortKeys(List.of(new RowSorter.SortKey(0, SortOrder.ASCENDING)));
+
         resultsTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 int selectedRow = resultsTable.getSelectedRow();
-                if (selectedRow >= 0 && selectedRow < scanResults.size()) {
-                    showDetails(scanResults.get(selectedRow));
+                if (selectedRow >= 0) {
+                    // Convert view index to model index because of sorting
+                    int modelRow = resultsTable.convertRowIndexToModel(selectedRow);
+                    if (modelRow >= 0 && modelRow < scanResults.size()) {
+                        // Note: scanResults list order matches the insertion order into the table model
+                        // So modelRow index corresponds to scanResults index
+                        showDetails(scanResults.get(modelRow));
+                    }
                 }
             }
         });
@@ -111,12 +141,19 @@ public class SapoToolWindow {
     }
 
     private void runScan() {
+        scanButton.setEnabled(false);
+        statusLabel.setText("Scanning dependencies...");
+        statusLabel.setIcon(new com.intellij.ui.AnimatedIcon.Default());
+        
         tableModel.setRowCount(0);
         scanResults.clear();
         detailsPane.setText("");
         
         VulnerabilityScannerService.getInstance(project).scanDependencies(result -> {
+            // Add to list
             scanResults.add(result);
+            
+            // Add to table
             Object[] row = {
                 result.pkg().name(),
                 result.pkg().version(),
@@ -124,6 +161,16 @@ public class SapoToolWindow {
                 result.vulnerable() ? "VULNERABLE" : "Safe"
             };
             tableModel.addRow(row);
+        }).whenComplete((v, ex) -> {
+            SwingUtilities.invokeLater(() -> {
+                scanButton.setEnabled(true);
+                statusLabel.setIcon(null);
+                if (ex != null) {
+                    statusLabel.setText("Scan failed: " + ex.getMessage());
+                } else {
+                    statusLabel.setText("Scan complete. Found " + scanResults.size() + " dependencies.");
+                }
+            });
         });
     }
 
