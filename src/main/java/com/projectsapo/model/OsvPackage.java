@@ -5,23 +5,25 @@
 
 package com.projectsapo.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import java.util.List;
 import java.util.Objects;
 
 /**
- * Represents the package information to be queried in the OSV API.
- *
- * @param name      The name of the package (e.g., "org.slf4j:slf4j-api").
- * @param ecosystem The ecosystem of the package (e.g., "Maven").
- * @param version   The specific version of the package.
+ * Represents the package information. Includes the dependency chain to show how a transitive
+ * dependency reached the project.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record OsvPackage(
-        String name,
-        String ecosystem,
-        String version
-) {
+    String name, String ecosystem, String version, List<String> dependencyChain) {
+  public OsvPackage {
+    Objects.requireNonNull(name, "Package name cannot be null");
+    Objects.requireNonNull(ecosystem, "Ecosystem cannot be null");
+    dependencyChain = dependencyChain != null ? List.copyOf(dependencyChain) : List.of();
+  }
 
-    public OsvPackage {
-        Objects.requireNonNull(name, "Package name cannot be null");
-        Objects.requireNonNull(ecosystem, "Ecosystem cannot be null");
-    }
+  // Constructor de conveniencia para compatibilidad
+  public OsvPackage(String name, String ecosystem, String version) {
+    this(name, ecosystem, version, List.of());
+  }
 }

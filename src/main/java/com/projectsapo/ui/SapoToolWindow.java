@@ -5,241 +5,332 @@
 
 package com.projectsapo.ui;
 
-import com.intellij.ide.BrowserUtil;
+import com.intellij.icons.AllIcons;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.ui.ColorUtil;
 import com.intellij.ui.components.JBScrollPane;
+import com.intellij.ui.jcef.JBCefBrowser;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.projectsapo.model.OsvVulnerability;
 import com.projectsapo.service.VulnerabilityScannerService;
-
-import javax.swing.*;
-import javax.swing.event.HyperlinkEvent;
-import javax.swing.table.DefaultTableModel;
-import javax.swing.table.TableRowSorter;
-import javax.swing.text.html.HTMLEditorKit;
-import javax.swing.text.html.StyleSheet;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableColumn;
+import javax.swing.table.TableRowSorter;
 
+/**
+ * Modern UI for Project Sapo using JCEF. Replicates Snyk's design for dependency chains and
+ * severity badges.
+ */
 public class SapoToolWindow {
 
-    private final JPanel content;
-    private final JBTable resultsTable;
-    private final DefaultTableModel tableModel;
-    private final JEditorPane detailsPane;
-    private final Project project;
-    private final JButton scanButton;
-    private final JLabel statusLabel;
-    private final List<VulnerabilityScannerService.ScanResult> scanResults = new ArrayList<>();
+  private final JPanel content;
+  private final JBTable resultsTable;
+  private final DefaultTableModel tableModel;
+  private final JBCefBrowser browser;
+  private final Project project;
+  private final JButton scanButton;
+  private final JLabel statusLabel;
+  private final List<VulnerabilityScannerService.ScanResult> scanResults = new ArrayList<>();
 
-    public SapoToolWindow(Project project, ToolWindow toolWindow) {
-        this.project = project;
-        content = new JPanel(new BorderLayout());
+  public SapoToolWindow(Project project, ToolWindow toolWindow) {
+    this.project = project;
+    this.content = new JPanel(new BorderLayout());
+    this.browser = new JBCefBrowser();
 
-        // Toolbar
-        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        scanButton = new JButton("Scan Dependencies");
-        scanButton.addActionListener(e -> runScan());
-        
-        statusLabel = new JLabel("");
-        statusLabel.setBorder(JBUI.Borders.emptyLeft(10));
-        
-        toolbar.add(scanButton);
-        toolbar.add(statusLabel);
-        content.add(toolbar, BorderLayout.NORTH);
+    JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
+    scanButton = new JButton("Scan Dependencies");
+    scanButton.addActionListener(e -> runScan());
+    statusLabel = new JLabel("Ready");
+    statusLabel.setBorder(JBUI.Borders.emptyLeft(10));
+    toolbar.add(scanButton);
+    toolbar.add(statusLabel);
+    content.add(toolbar, BorderLayout.NORTH);
 
-        // Splitter
-        Splitter splitter = new Splitter(false, 0.4f);
+    Splitter splitter = new Splitter(false, 0.35f);
 
-        // Table
-        String[] columnNames = {"Dependency", "Version", "Vulns", "Status"};
-        tableModel = new DefaultTableModel(columnNames, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-            
-            // Define column types for proper sorting
-            @Override
-            public Class<?> getColumnClass(int columnIndex) {
-                if (columnIndex == 2) return Integer.class; // Vulns count
-                return String.class;
-            }
+    // Updated column name to "Severity"
+    tableModel =
+        new DefaultTableModel(new String[] {"Severity", "Dependency", "Version", "Vulns"}, 0) {
+          @Override
+          public boolean isCellEditable(int row, int column) {
+            return false;
+          }
+
+          @Override
+          public Class<?> getColumnClass(int columnIndex) {
+            if (columnIndex == 0) return Icon.class;
+            if (columnIndex == 3) return Integer.class;
+            return String.class;
+          }
         };
-        resultsTable = new JBTable(tableModel);
-        resultsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        
-        // Enable sorting
-        resultsTable.setAutoCreateRowSorter(true);
-        TableRowSorter<DefaultTableModel> sorter = new TableRowSorter<>(tableModel);
-        resultsTable.setRowSorter(sorter);
-        
-        // Default sort by Dependency name (column 0) ascending
-        sorter.setSortKeys(List.of(new RowSorter.SortKey(0, SortOrder.ASCENDING)));
+    resultsTable = new JBTable(tableModel);
+    resultsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+    resultsTable.setAutoCreateRowSorter(true); // Enable sorting
 
-        resultsTable.getSelectionModel().addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) {
-                int selectedRow = resultsTable.getSelectedRow();
-                if (selectedRow >= 0) {
-                    // Convert view index to model index because of sorting
-                    int modelRow = resultsTable.convertRowIndexToModel(selectedRow);
-                    if (modelRow >= 0 && modelRow < scanResults.size()) {
-                        // Note: scanResults list order matches the insertion order into the table model
-                        // So modelRow index corresponds to scanResults index
-                        showDetails(scanResults.get(modelRow));
-                    }
+    // Set default sort to "Dependency" column (index 1) alphabetically
+    TableRowSorter<DefaultTableModel> sorter = new TableRowSorter<>(tableModel);
+    resultsTable.setRowSorter(sorter);
+    sorter.setSortKeys(List.of(new RowSorter.SortKey(1, SortOrder.ASCENDING)));
+
+    // Adjust "Severity" column width to fit the header text
+    TableColumn iconColumn = resultsTable.getColumnModel().getColumn(0);
+    iconColumn.setPreferredWidth(60);
+    iconColumn.setMaxWidth(80);
+    iconColumn.setMinWidth(60);
+
+    resultsTable
+        .getSelectionModel()
+        .addListSelectionListener(
+            e -> {
+              if (!e.getValueIsAdjusting()) {
+                int row = resultsTable.getSelectedRow();
+                if (row >= 0) {
+                  int modelRow = resultsTable.convertRowIndexToModel(row);
+                  showDetails(scanResults.get(modelRow));
                 }
-            }
-        });
-
-        splitter.setFirstComponent(new JBScrollPane(resultsTable));
-
-        // Details Pane (HTML)
-        detailsPane = new JEditorPane();
-        detailsPane.setEditable(false);
-        detailsPane.setContentType("text/html");
-        detailsPane.setMargin(JBUI.insets(10));
-        
-        // Handle hyperlinks
-        detailsPane.addHyperlinkListener(e -> {
-            if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED) {
-                BrowserUtil.browse(e.getURL());
-            }
-        });
-        
-        // Apply basic styling
-        HTMLEditorKit kit = new HTMLEditorKit();
-        StyleSheet styleSheet = kit.getStyleSheet();
-        styleSheet.addRule("body { font-family: sans-serif; font-size: 12px; }");
-        styleSheet.addRule("h2 { color: #E53935; margin-bottom: 5px; }"); // Red for title
-        styleSheet.addRule("h3 { margin-top: 15px; margin-bottom: 5px; font-size: 14px; }");
-        styleSheet.addRule(".vuln-card { border: 1px solid #ccc; padding: 10px; margin-bottom: 15px; background-color: #f9f9f9; }");
-        styleSheet.addRule(".vuln-id { font-weight: bold; color: #1976D2; }");
-        styleSheet.addRule(".fixed-in { font-weight: bold; color: #388E3C; }");
-        styleSheet.addRule(".safe-message { color: #388E3C; font-size: 14px; font-weight: bold; }");
-        styleSheet.addRule("a { color: #1976D2; text-decoration: none; }");
-        styleSheet.addRule("ul { margin-top: 5px; margin-bottom: 5px; padding-left: 20px; }");
-        styleSheet.addRule("li { margin-bottom: 3px; }");
-        
-        // Dark mode adjustments (basic heuristic)
-        if (ColorUtil.isDark(UIUtil.getPanelBackground())) {
-             styleSheet.addRule("body { color: #bbbbbb; }");
-             styleSheet.addRule(".vuln-card { border: 1px solid #555; background-color: #3c3f41; }");
-             styleSheet.addRule("h2 { color: #ff5252; }");
-             styleSheet.addRule(".vuln-id { color: #64b5f6; }");
-             styleSheet.addRule(".fixed-in { color: #81c784; }");
-             styleSheet.addRule(".safe-message { color: #81c784; }");
-             styleSheet.addRule("a { color: #64b5f6; }");
-        }
-
-        detailsPane.setEditorKit(kit);
-        
-        splitter.setSecondComponent(new JBScrollPane(detailsPane));
-
-        content.add(splitter, BorderLayout.CENTER);
-    }
-
-    private void runScan() {
-        scanButton.setEnabled(false);
-        statusLabel.setText("Scanning dependencies...");
-        statusLabel.setIcon(new com.intellij.ui.AnimatedIcon.Default());
-        
-        tableModel.setRowCount(0);
-        scanResults.clear();
-        detailsPane.setText("");
-        
-        VulnerabilityScannerService.getInstance(project).scanDependencies(result -> {
-            // Add to list
-            scanResults.add(result);
-            
-            // Add to table
-            Object[] row = {
-                result.pkg().name(),
-                result.pkg().version(),
-                result.vulnerabilities().size(),
-                result.vulnerable() ? "VULNERABLE" : "Safe"
-            };
-            tableModel.addRow(row);
-        }).whenComplete((v, ex) -> {
-            SwingUtilities.invokeLater(() -> {
-                scanButton.setEnabled(true);
-                statusLabel.setIcon(null);
-                if (ex != null) {
-                    statusLabel.setText("Scan failed: " + ex.getMessage());
-                } else {
-                    statusLabel.setText("Scan complete. Found " + scanResults.size() + " dependencies.");
-                }
+              }
             });
-        });
+
+    splitter.setFirstComponent(new JBScrollPane(resultsTable));
+    splitter.setSecondComponent(browser.getComponent());
+    content.add(splitter, BorderLayout.CENTER);
+    browser.loadHTML(
+        generateHtml("<h1>Project Sapo</h1><p>Select a dependency to see details.</p>"));
+  }
+
+  private void runScan() {
+    scanButton.setEnabled(false);
+    statusLabel.setText("Scanning...");
+    tableModel.setRowCount(0);
+    scanResults.clear();
+
+    VulnerabilityScannerService.getInstance(project)
+        .scanDependencies(
+            result -> {
+              ApplicationManager.getApplication()
+                  .invokeLater(
+                      () -> {
+                        scanResults.add(result);
+                        String highestSev = getHighestSeverity(result.vulnerabilities());
+                        tableModel.addRow(
+                            new Object[] {
+                              getSeverityIcon(highestSev),
+                              result.pkg().name(),
+                              result.pkg().version(),
+                              result.vulnerabilities().size()
+                            });
+                      });
+            })
+        .whenComplete(
+            (v, ex) ->
+                ApplicationManager.getApplication()
+                    .invokeLater(
+                        () -> {
+                          scanButton.setEnabled(true);
+                          statusLabel.setText(
+                              ex != null
+                                  ? "Scan failed"
+                                  : "Scan complete (" + scanResults.size() + ")");
+                        }));
+  }
+
+  private void showDetails(VulnerabilityScannerService.ScanResult result) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("<div class='header'>");
+    sb.append("<h1>").append(result.pkg().name()).append("</h1>");
+    sb.append("<div class='version'>Version: ").append(result.pkg().version()).append("</div>");
+    sb.append("</div>");
+
+    // Snyk-style Dependency Chain
+    if (result.pkg().dependencyChain() != null && !result.pkg().dependencyChain().isEmpty()) {
+      sb.append("<div class='snyk-chain'>");
+      List<String> chain = result.pkg().dependencyChain();
+
+      // Root
+      sb.append("<div class='chain-item root'><span class='icon'>📦</span> ")
+          .append(project.getName())
+          .append("</div>");
+
+      // Intermediate
+      for (int i = 0; i < chain.size() - 1; i++) {
+        sb.append("<div class='chain-item intermediate' style='padding-left: ")
+            .append((i + 1) * 20)
+            .append("px;'>");
+        sb.append("<span class='connector'>└─</span> <span class='icon'>📄</span> ")
+            .append(chain.get(i));
+        sb.append("</div>");
+      }
+
+      // Target (Vulnerable)
+      String target = chain.get(chain.size() - 1);
+      sb.append("<div class='chain-item target' style='padding-left: ")
+          .append(chain.size() * 20)
+          .append("px;'>");
+      sb.append("<span class='connector'>└─</span> <span class='icon'>⚠️</span> <b>")
+          .append(target)
+          .append("</b>");
+      sb.append("</div>");
+
+      sb.append("</div>");
+
+      // Remediation
+      if (chain.size() > 1) {
+        sb.append("<div class='remediation-box'>");
+        sb.append("<div class='remediation-title'>Remediation</div>");
+        sb.append("<p>Upgrade <code>")
+            .append(chain.get(0))
+            .append("</code> to remove this vulnerability.</p>");
+        sb.append("</div>");
+      }
     }
 
-    private void showDetails(VulnerabilityScannerService.ScanResult result) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("<html><body>");
-        
-        sb.append("<h1>").append(result.pkg().name()).append("</h1>");
-        sb.append("<p><b>Version:</b> ").append(result.pkg().version()).append("</p>");
+    if (result.vulnerable()) {
+      sb.append("<div class='section-title'>")
+          .append(result.vulnerabilities().size())
+          .append(" Vulnerabilities</div>");
+      for (OsvVulnerability vuln : result.vulnerabilities()) {
+        String sev = getSeverity(vuln);
+        sb.append("<div class='card'>");
+        sb.append("<div class='card-header'>");
+        sb.append("<span class='badge ")
+            .append(sev.toLowerCase())
+            .append("'>")
+            .append(sev)
+            .append("</span>");
+        sb.append("<span class='vuln-id'>").append(vuln.id()).append("</span>");
+        sb.append("</div>");
+        sb.append("<div class='vuln-summary'>")
+            .append(vuln.summary() != null ? vuln.summary() : "No summary")
+            .append("</div>");
+        sb.append("<div class='fixed-box'>Fixed in: <span class='fixed-ver'>")
+            .append(findFixedVersion(vuln))
+            .append("</span></div>");
+        sb.append("<div class='details'>")
+            .append(vuln.details() != null ? vuln.details().replace("\n", "<br>") : "")
+            .append("</div>");
+        sb.append("</div>");
+      }
+    } else {
+      sb.append("<div class='safe-banner'>✅ No known vulnerabilities found.</div>");
+    }
 
-        if (result.vulnerable()) {
-            sb.append("<h2>").append(result.vulnerabilities().size()).append(" Vulnerabilities Found</h2>");
-            
-            for (OsvVulnerability vuln : result.vulnerabilities()) {
-                sb.append("<div class='vuln-card'>");
-                
-                sb.append("<div class='vuln-id'>").append(vuln.id()).append("</div>");
-                sb.append("<h3>").append(vuln.summary() != null ? vuln.summary() : "No summary").append("</h3>");
-                
-                String fixedVersion = "Unknown";
-                if (vuln.affected() != null) {
-                    for (OsvVulnerability.Affected affected : vuln.affected()) {
-                        if (affected.ranges() != null) {
-                            for (OsvVulnerability.Range range : affected.ranges()) {
-                                if (range.events() != null) {
-                                    for (OsvVulnerability.Event event : range.events()) {
-                                        if (event.fixed() != null) {
-                                            fixedVersion = event.fixed();
-                                            break;
-                                        }
-                                    }
-                                }
-                                if (!"Unknown".equals(fixedVersion)) break;
-                            }
-                        }
-                        if (!"Unknown".equals(fixedVersion)) break;
-                    }
-                }
-                
-                sb.append("<p>Fixed in: <span class='fixed-in'>").append(fixedVersion).append("</span></p>");
-                sb.append("<p>").append(vuln.details() != null ? vuln.details().replace("\n", "<br>") : "No details provided").append("</p>");
-                
-                // References
-                if (vuln.references() != null && !vuln.references().isEmpty()) {
-                    sb.append("<p><b>References:</b></p>");
-                    sb.append("<ul>");
-                    for (OsvVulnerability.Reference ref : vuln.references()) {
-                        sb.append("<li><a href='").append(ref.url()).append("'>").append(ref.url()).append("</a></li>");
-                    }
-                    sb.append("</ul>");
-                }
-                
-                sb.append("</div>");
-            }
-        } else {
-            sb.append("<p class='safe-message'>✅ No known vulnerabilities found for this package.</p>");
+    browser.loadHTML(generateHtml(sb.toString()));
+  }
+
+  private String generateHtml(String bodyContent) {
+    boolean isDark = ColorUtil.isDark(UIUtil.getPanelBackground());
+    String bgColor = isDark ? "#1e1e1e" : "#ffffff";
+    String textColor = isDark ? "#d4d4d4" : "#333333";
+    String cardBg = isDark ? "#252526" : "#ffffff";
+    String borderColor = isDark ? "#454545" : "#e0e0e0";
+
+    return "<html><head><style>"
+        + "body { font-family: 'Inter', sans-serif; padding: 24px; background: "
+        + bgColor
+        + "; color: "
+        + textColor
+        + "; line-height: 1.5; }"
+        + "h1 { font-size: 20px; font-weight: 600; margin: 0; }"
+        + ".snyk-chain { font-family: 'JetBrains Mono', monospace; margin: 16px 0; font-size: 13px; }"
+        + ".chain-item { padding: 4px 0; display: flex; align-items: center; }"
+        + ".connector { color: #888; margin-right: 8px; }"
+        + ".icon { margin-right: 6px; }"
+        + ".target { color: #e53935; font-weight: bold; }"
+        + ".remediation-box { background: "
+        + (isDark ? "#1a2a3a" : "#e3f2fd")
+        + "; border: 1px solid #2196f3; border-radius: 4px; padding: 12px; margin-top: 16px; }"
+        + ".remediation-title { font-weight: 800; color: #2196f3; text-transform: uppercase; font-size: 11px; margin-bottom: 4px; }"
+        + ".card { background: "
+        + cardBg
+        + "; border: 1px solid "
+        + borderColor
+        + "; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }"
+        + ".badge { padding: 4px 8px; border-radius: 4px; color: white; font-size: 11px; font-weight: 800; margin-right: 12px; text-transform: uppercase; }"
+        + ".critical { background: #b71c1c; } .high { background: #e65100; } .medium { background: #f57f17; color: white; } .low { background: #33691e; }"
+        + ".fixed-box { background: rgba(67, 160, 71, 0.1); color: #2e7d32; padding: 4px 8px; border-radius: 4px; font-weight: 600; display: inline-block; margin: 8px 0; }"
+        + "</style></head><body>"
+        + bodyContent
+        + "</body></html>";
+  }
+
+  private String getHighestSeverity(List<OsvVulnerability> vulns) {
+    if (vulns.isEmpty()) return "SAFE";
+    int max = 0;
+    for (OsvVulnerability v : vulns) {
+      int l =
+          switch (getSeverity(v)) {
+            case "CRITICAL" -> 4;
+            case "HIGH" -> 3;
+            case "MEDIUM" -> 2;
+            case "LOW" -> 1;
+            default -> 0;
+          };
+      if (l > max) max = l;
+    }
+    return switch (max) {
+      case 4 -> "CRITICAL";
+      case 3 -> "HIGH";
+      case 2 -> "MEDIUM";
+      case 1 -> "LOW";
+      default -> "SAFE";
+    };
+  }
+
+  private Icon getSeverityIcon(String s) {
+    return switch (s) {
+      case "CRITICAL" -> AllIcons.General.Error;
+      case "HIGH" -> AllIcons.General.Warning;
+      case "MEDIUM" -> AllIcons.General.Note;
+      case "LOW" -> AllIcons.General.Information;
+      default -> AllIcons.General.InspectionsOK;
+    };
+  }
+
+  private String getSeverity(OsvVulnerability v) {
+    if (v.databaseSpecific() != null) {
+      Object sev = v.databaseSpecific().get("severity");
+      if (sev instanceof String) return ((String) sev).toUpperCase();
+    }
+    if (v.severity() != null) {
+      for (OsvVulnerability.Severity s : v.severity()) {
+        if ("CVSS_V3".equals(s.type()) || "CVSS_V2".equals(s.type())) {
+          try {
+            double sc = Double.parseDouble(s.score());
+            if (sc >= 9.0) return "CRITICAL";
+            if (sc >= 7.0) return "HIGH";
+            if (sc >= 4.0) return "MEDIUM";
+            return "LOW";
+          } catch (NumberFormatException ignored) {
+          }
         }
-
-        sb.append("</body></html>");
-        detailsPane.setText(sb.toString());
-        detailsPane.setCaretPosition(0);
+      }
     }
+    return "MEDIUM";
+  }
 
-    public JPanel getContent() {
-        return content;
-    }
+  private String findFixedVersion(OsvVulnerability v) {
+    if (v.affected() == null) return "Unknown";
+    return v.affected().stream()
+        .filter(a -> a.ranges() != null)
+        .flatMap(a -> a.ranges().stream())
+        .filter(r -> r.events() != null)
+        .flatMap(r -> r.events().stream())
+        .map(OsvVulnerability.Event::fixed)
+        .filter(java.util.Objects::nonNull)
+        .findFirst()
+        .orElse("Unknown");
+  }
+
+  public JComponent getContent() {
+    return content;
+  }
 }
