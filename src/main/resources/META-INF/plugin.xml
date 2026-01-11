@@ -1,8 +1,3 @@
-<!--
-  ~ Copyright (c) 2026 Luis Paolo Pepe Barra (LuisPPB16).
-  ~ All rights reserved.
-  -->
-
 <idea-plugin>
     <id>com.projectsapo</id>
     <name>Project Sapo</name>
@@ -18,14 +13,14 @@
         <toolWindow id="Project Sapo"
                     secondary="false"
                     icon="/META-INF/pluginIcon.svg"
-                    anchor="left"
+                    anchor="bottom"
                     factoryClass="com.projectsapo.ui.SapoToolWindowFactory"/>
     </extensions>
 
     <actions>
         <action id="com.projectsapo.action.CheckVulnerabilitiesAction"
                 class="com.projectsapo.action.CheckVulnerabilitiesAction"
-                text="Check Vulnerabilities"
+                text="Project Sapo -> Check"
                 description="Checks project dependencies for known vulnerabilities using OSV.dev">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
