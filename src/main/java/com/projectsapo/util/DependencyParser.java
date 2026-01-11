@@ -32,8 +32,7 @@ import org.jetbrains.idea.maven.project.MavenProjectsManager;
 import org.jetbrains.plugins.gradle.util.GradleConstants;
 
 /**
- * Utility class to parse dependencies and their transitive chains. Fixed to avoid including the
- * project name as a parent dependency.
+ * Utility class to parse dependencies and their transitive chains.
  */
 public final class DependencyParser {
 

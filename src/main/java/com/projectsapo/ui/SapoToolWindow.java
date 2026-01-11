@@ -304,12 +304,12 @@ public class SapoToolWindow {
       for (OsvVulnerability.Severity s : v.severity()) {
         if ("CVSS_V3".equals(s.type()) || "CVSS_V2".equals(s.type())) {
           try {
-            double sc = Double.parseDouble(s.score());
+            double sc = java.text.NumberFormat.getInstance(java.util.Locale.ROOT).parse(s.score()).doubleValue();
             if (sc >= 9.0) return "CRITICAL";
             if (sc >= 7.0) return "HIGH";
             if (sc >= 4.0) return "MEDIUM";
             return "LOW";
-          } catch (NumberFormatException ignored) {
+          } catch (java.text.ParseException | NumberFormatException ignored) {
           }
         }
       }

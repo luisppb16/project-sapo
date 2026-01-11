@@ -22,7 +22,7 @@ public record OsvPackage(
     dependencyChain = dependencyChain != null ? List.copyOf(dependencyChain) : List.of();
   }
 
-  // Constructor de conveniencia para compatibilidad
+  // Convenience constructor for compatibility
   public OsvPackage(String name, String ecosystem, String version) {
     this(name, ecosystem, version, List.of());
   }
