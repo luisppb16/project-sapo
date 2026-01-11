@@ -47,7 +47,8 @@ public final class DependencyParser {
     Set<OsvPackage> dependencies = new HashSet<>();
 
     // 1. Maven: Real tree support
-    if (MavenProjectsManager.getInstance(project).hasProjects()) {
+    MavenProjectsManager mavenManager = MavenProjectsManager.getInstance(project);
+    if (mavenManager != null && mavenManager.hasProjects()) {
       dependencies.addAll(parseMavenDependencies(project));
     }
 
@@ -75,6 +76,8 @@ public final class DependencyParser {
   private static List<OsvPackage> parseMavenDependencies(Project project) {
     List<OsvPackage> dependencies = new ArrayList<>();
     MavenProjectsManager projectsManager = MavenProjectsManager.getInstance(project);
+    if (projectsManager == null) return dependencies;
+
     for (MavenProject mavenProject : projectsManager.getProjects()) {
       for (MavenArtifactNode node : mavenProject.getDependencyTree()) {
         // Start chain with the direct dependency itself

@@ -1,0 +1,35 @@
+/*
+ * Copyright (c) 2026 Luis Paolo Pepe Barra (@LuisPPB16).
+ * All rights reserved.
+ */
+
+package com.projectsapo.util;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import org.junit.jupiter.api.Test;
+
+class ProjectConstantsTest {
+
+  @Test
+  void testConstants() {
+    assertEquals("https://api.osv.dev/v1/query", ProjectConstants.OSV_API_URL);
+  }
+
+  @Test
+  void testPrivateConstructor() throws NoSuchMethodException {
+    Constructor<ProjectConstants> constructor = ProjectConstants.class.getDeclaredConstructor();
+    assertTrue(java.lang.reflect.Modifier.isPrivate(constructor.getModifiers()));
+    constructor.setAccessible(true);
+    try {
+      constructor.newInstance();
+      fail("Expected InvocationTargetException");
+    } catch (InvocationTargetException e) {
+      assertTrue(e.getCause() instanceof UnsupportedOperationException);
+    } catch (InstantiationException | IllegalAccessException e) {
+      fail("Unexpected exception: " + e);
+    }
+  }
+}
