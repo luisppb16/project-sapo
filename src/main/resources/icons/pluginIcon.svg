@@ -37,15 +37,16 @@
     <path d="M16 18 Q 20 20 24 18" stroke="#2E7D32" stroke-width="1" fill="none"/>
 
     <!-- Tongue (Natural Curve & Tapered) -->
-    <!-- Starts at mouth (20,18), curves naturally to bug at (36,4), slightly thicker at base -->
+    <!-- Starts at mouth (20,18), curves naturally to shield at (36,4) -->
     <path d="M20 18 C 22 16, 28 12, 36 4" stroke="#F06292" stroke-width="2" fill="none" stroke-linecap="round"/>
     <!-- Sticky tip -->
     <circle cx="36" cy="4" r="1.2" fill="#F06292"/>
 
-    <!-- Bug (Fly - More detailed silhouette) -->
-    <!-- Body -->
-    <ellipse cx="36" cy="4" rx="1.5" ry="2" fill="#263238" transform="rotate(45 36 4)"/>
-    <!-- Wings (Translucent) -->
-    <path d="M36 4 L 32 2 Q 31 0 33 0 Q 35 0 36 4" fill="#90A4AE" opacity="0.7"/>
-    <path d="M36 4 L 38 0 Q 40 0 40 2 Q 40 3 36 4" fill="#90A4AE" opacity="0.7"/>
+    <!-- Broken Security Shield (Symbolizing Vulnerability) -->
+    <g transform="translate(33, 1)">
+        <!-- Shield Body -->
+        <path d="M 0 0 L 6 0 L 6 2 C 6 5 3 7 3 7 C 3 7 0 5 0 2 L 0 0 Z" fill="#E53935"/>
+        <!-- Crack -->
+        <path d="M 3 0 L 2 2 L 4 4 L 3 7" stroke="#FFFFFF" stroke-width="0.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
 </svg>
