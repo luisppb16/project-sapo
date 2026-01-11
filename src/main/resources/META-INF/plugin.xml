@@ -40,7 +40,7 @@
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Project Sapo"
                     secondary="false"
-                    icon="/META-INF/pluginIcon.svg"
+                    icon="/icons/pluginIcon.svg"
                     anchor="bottom"
                     factoryClass="com.projectsapo.ui.SapoToolWindowFactory"/>
     </extensions>

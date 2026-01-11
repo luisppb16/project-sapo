@@ -6,27 +6,32 @@
 package com.projectsapo.util;
 
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.roots.OrderEnumerator;
+import com.intellij.openapi.roots.libraries.Library;
 import com.projectsapo.model.OsvPackage;
-import org.gradle.tooling.GradleConnector;
-import org.gradle.tooling.ProjectConnection;
-import org.gradle.tooling.model.idea.IdeaModule;
-import org.gradle.tooling.model.idea.IdeaProject;
-import org.gradle.tooling.model.idea.IdeaSingleEntryLibraryDependency;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.idea.maven.project.MavenProject;
 import org.jetbrains.idea.maven.project.MavenProjectsManager;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Utility class to parse dependencies from the project.
- * Supports Gradle (via Tooling API) and Maven (via IntelliJ Maven Plugin).
+ * Utility class to parse dependencies from the project using IntelliJ's internal model.
+ * This is more reliable than calling Gradle/Maven externally.
  */
-public class DependencyParser {
+public final class DependencyParser {
+
+    private static final Pattern GRADLE_LIB_PATTERN = Pattern.compile("^Gradle: (.+):(.+):(.+)$");
+
+    private DependencyParser() {
+        throw new UnsupportedOperationException("Utility class");
+    }
 
     /**
      * Extracts dependencies from the given project.
@@ -34,63 +39,50 @@ public class DependencyParser {
      * @param project The IntelliJ project.
      * @return A list of OsvPackage objects representing the dependencies.
      */
-    public static List<OsvPackage> parseDependencies(Project project) {
-        List<OsvPackage> dependencies = new ArrayList<>();
-        String basePath = project.getBasePath();
+    public static List<OsvPackage> parseDependencies(@NotNull Project project) {
+        Set<OsvPackage> dependencies = new HashSet<>();
 
-        if (basePath == null) {
-            return dependencies;
-        }
-
-        File projectDir = new File(basePath);
-        
-        // Check for Gradle
-        if (new File(projectDir, "build.gradle").exists() || new File(projectDir, "build.gradle.kts").exists()) {
-            dependencies.addAll(parseGradleDependencies(projectDir));
-        }
-
-        // Check for Maven
+        // 1. Try Maven-specific API for better accuracy if it's a Maven project
         if (MavenProjectsManager.getInstance(project).hasProjects()) {
             dependencies.addAll(parseMavenDependencies(project));
         }
 
-        // Deduplicate and sort
+        // 2. Use OrderEnumerator to catch everything else (Gradle, manual Jars, etc.)
+        // This acts as a fallback and primary source for Gradle projects
+        OrderEnumerator.orderEntries(project).librariesOnly().forEachLibrary(library -> {
+            OsvPackage pkg = parseLibrary(library);
+            if (pkg != null) {
+                dependencies.add(pkg);
+            }
+            return true;
+        });
+
         return dependencies.stream()
-                .distinct()
                 .sorted(Comparator.comparing(OsvPackage::name))
                 .toList();
     }
 
-    private static List<OsvPackage> parseGradleDependencies(File projectDir) {
-        Set<OsvPackage> dependencies = new HashSet<>();
-        GradleConnector connector = GradleConnector.newConnector();
-        connector.forProjectDirectory(projectDir);
-        
-        try (ProjectConnection connection = connector.connect()) {
-            IdeaProject ideaProject = connection.getModel(IdeaProject.class);
-            
-            for (IdeaModule module : ideaProject.getModules()) {
-                module.getDependencies().forEach(dependency -> {
-                    if (dependency instanceof IdeaSingleEntryLibraryDependency lib) {
-                        var gradleModuleVersion = lib.getGradleModuleVersion();
-                        
-                        if (gradleModuleVersion != null) {
-                            String group = gradleModuleVersion.getGroup();
-                            String name = gradleModuleVersion.getName();
-                            String version = gradleModuleVersion.getVersion();
-                            
-                            if (group != null && name != null && version != null) {
-                                dependencies.add(new OsvPackage(group + ":" + name, "Maven", version));
-                            }
-                        }
-                    }
-                });
-            }
-        } catch (Exception e) {
-            System.err.println("Error parsing Gradle dependencies: " + e.getMessage());
+    private static OsvPackage parseLibrary(Library library) {
+        String name = library.getName();
+        if (name == null) return null;
+
+        // Handle Gradle format: "Gradle: group:artifact:version"
+        Matcher matcher = GRADLE_LIB_PATTERN.matcher(name);
+        if (matcher.matches()) {
+            String group = matcher.group(1);
+            String artifact = matcher.group(2);
+            String version = matcher.group(3);
+            return new OsvPackage(group + ":" + artifact, "Maven", version);
         }
-        
-        return new ArrayList<>(dependencies);
+
+        // Fallback for other formats or generic libraries
+        // Many plugins use "group:artifact:version" directly
+        String[] parts = name.split(":");
+        if (parts.length == 3) {
+            return new OsvPackage(parts[0] + ":" + parts[1], "Maven", parts[2]);
+        }
+
+        return null;
     }
 
     private static List<OsvPackage> parseMavenDependencies(Project project) {
@@ -100,11 +92,11 @@ public class DependencyParser {
         for (MavenProject mavenProject : projectsManager.getProjects()) {
             mavenProject.getDependencies().forEach(dep -> {
                 String group = dep.getGroupId();
-                String name = dep.getArtifactId();
+                String artifact = dep.getArtifactId();
                 String version = dep.getVersion();
                 
-                if (group != null && name != null && version != null) {
-                    dependencies.add(new OsvPackage(group + ":" + name, "Maven", version));
+                if (group != null && artifact != null && version != null) {
+                    dependencies.add(new OsvPackage(group + ":" + artifact, "Maven", version));
                 }
             });
         }
