@@ -21,9 +21,12 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.idea.maven.model.MavenArtifact;
 import org.jetbrains.idea.maven.model.MavenArtifactNode;
@@ -44,16 +47,16 @@ public final class DependencyParser {
   }
 
   public static List<OsvPackage> parseDependencies(@NotNull Project project) {
-    Set<OsvPackage> dependencies = new HashSet<>();
+    List<OsvPackage> allPackages = new ArrayList<>();
 
     // 1. Maven: Real tree support
     MavenProjectsManager mavenManager = MavenProjectsManager.getInstance(project);
     if (mavenManager != null && mavenManager.hasProjects()) {
-      dependencies.addAll(parseMavenDependencies(project));
+      allPackages.addAll(parseMavenDependencies(project));
     }
 
     // 2. Gradle: External System support
-    dependencies.addAll(parseGradleDependencies(project));
+    allPackages.addAll(parseGradleDependencies(project));
 
     // 3. Fallback: OrderEnumerator
     OrderEnumerator.orderEntries(project)
@@ -61,16 +64,36 @@ public final class DependencyParser {
         .forEachLibrary(
             library -> {
               OsvPackage pkg = parseLibrary(library);
-              if (pkg != null
-                  && dependencies.stream()
-                      .noneMatch(
-                          d -> d.name().equals(pkg.name()) && d.version().equals(pkg.version()))) {
-                dependencies.add(pkg);
+              if (pkg != null) {
+                allPackages.add(pkg);
               }
               return true;
             });
 
-    return dependencies.stream().sorted(Comparator.comparing(OsvPackage::name)).toList();
+    // Aggregation: Deduplicate based on name, version, ecosystem
+    Map<String, List<OsvPackage>> grouped =
+        allPackages.stream()
+            .collect(
+                Collectors.groupingBy(
+                    pkg -> pkg.name() + ":" + pkg.version() + ":" + pkg.ecosystem()));
+
+    return grouped.values().stream()
+        .map(
+            group -> {
+              OsvPackage representative = group.get(0);
+              Set<List<String>> allChains =
+                  group.stream()
+                      .map(OsvPackage::dependencyChains)
+                      .flatMap(Collection::stream)
+                      .collect(Collectors.toSet());
+              return new OsvPackage(
+                  representative.name(),
+                  representative.ecosystem(),
+                  representative.version(),
+                  allChains);
+            })
+        .sorted(Comparator.comparing(OsvPackage::name))
+        .toList();
   }
 
   private static List<OsvPackage> parseMavenDependencies(Project project) {
@@ -95,7 +118,7 @@ public final class DependencyParser {
     List<String> currentChain = new ArrayList<>(parentChain);
     currentChain.add(fullName);
 
-    result.add(new OsvPackage(fullName, "Maven", artifact.getVersion(), currentChain));
+    result.add(new OsvPackage(fullName, "Maven", artifact.getVersion(), Set.of(currentChain)));
 
     for (MavenArtifactNode child : node.getDependencies()) {
       collectMavenDependencies(child, currentChain, result);
@@ -123,7 +146,8 @@ public final class DependencyParser {
         if (group != null && artifact != null && version != null) {
           String fullName = group + ":" + artifact;
           // For Gradle, we treat it as direct if we can't easily find the parent in this flat list
-          dependencies.add(new OsvPackage(fullName, "Maven", version, List.of(fullName)));
+          dependencies.add(
+              new OsvPackage(fullName, "Maven", version, Set.of(List.of(fullName))));
         }
       }
     }
@@ -136,12 +160,14 @@ public final class DependencyParser {
     Matcher matcher = GRADLE_LIB_PATTERN.matcher(name);
     if (matcher.matches()) {
       String fullName = matcher.group(1) + ":" + matcher.group(2);
-      return new OsvPackage(fullName, "Maven", matcher.group(3), List.of(fullName));
+      return new OsvPackage(
+          fullName, "Maven", matcher.group(3), Set.of(List.of(fullName)));
     }
     String[] parts = name.split(":");
     if (parts.length == 3) {
       String fullName = parts[0] + ":" + parts[1];
-      return new OsvPackage(fullName, "Maven", parts[2], List.of(fullName));
+      return new OsvPackage(
+          fullName, "Maven", parts[2], Set.of(List.of(fullName)));
     }
     return null;
   }
