@@ -11,6 +11,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class OsvModelTest {
@@ -23,11 +24,12 @@ class OsvModelTest {
     assertEquals("name", pkg.name());
     assertEquals("ecosystem", pkg.ecosystem());
     assertEquals("version", pkg.version());
-    assertTrue(pkg.dependencyChain().isEmpty());
+    assertTrue(pkg.dependencyChains().isEmpty());
 
     OsvPackage pkgWithChain =
-        new OsvPackage("name", "ecosystem", "version", List.of("parent", "name"));
-    assertEquals(2, pkgWithChain.dependencyChain().size());
+        new OsvPackage("name", "ecosystem", "version", Set.of(List.of("parent", "name")));
+    assertEquals(1, pkgWithChain.dependencyChains().size());
+    assertTrue(pkgWithChain.dependencyChains().contains(List.of("parent", "name")));
   }
 
   @Test

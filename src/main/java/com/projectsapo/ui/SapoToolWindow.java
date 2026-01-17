@@ -21,6 +21,7 @@ import com.projectsapo.service.VulnerabilityScannerService;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
@@ -150,46 +151,51 @@ public class SapoToolWindow {
     sb.append("<div class='version'>Version: ").append(result.pkg().version()).append("</div>");
     sb.append("</div>");
 
-    // Snyk-style Dependency Chain
-    if (result.pkg().dependencyChain() != null && !result.pkg().dependencyChain().isEmpty()) {
-      sb.append("<div class='snyk-chain'>");
-      List<String> chain = result.pkg().dependencyChain();
+    Set<List<String>> chains = result.pkg().dependencyChains();
+    if (chains != null && !chains.isEmpty()) {
+      int pathIndex = 1;
+      for (List<String> chain : chains) {
+        if (chains.size() > 1) {
+          sb.append("<div class='path-header'>Path #").append(pathIndex++).append("</div>");
+        }
+        sb.append("<div class='snyk-chain'>");
 
-      // Root
-      sb.append("<div class='chain-item root'><span class='icon'>📦</span> ")
-          .append(project.getName())
-          .append("</div>");
+        // Root
+        sb.append("<div class='chain-item root'><span class='icon'>📦</span> ")
+            .append(project.getName())
+            .append("</div>");
 
-      // Intermediate
-      for (int i = 0; i < chain.size() - 1; i++) {
-        sb.append("<div class='chain-item intermediate' style='padding-left: ")
-            .append((i + 1) * 20)
+        // Intermediate
+        for (int i = 0; i < chain.size() - 1; i++) {
+          sb.append("<div class='chain-item intermediate' style='padding-left: ")
+              .append((i + 1) * 20)
+              .append("px;'>");
+          sb.append("<span class='connector'>└─</span> <span class='icon'>📄</span> ")
+              .append(chain.get(i));
+          sb.append("</div>");
+        }
+
+        // Target (Vulnerable)
+        String target = chain.get(chain.size() - 1);
+        sb.append("<div class='chain-item target' style='padding-left: ")
+            .append(chain.size() * 20)
             .append("px;'>");
-        sb.append("<span class='connector'>└─</span> <span class='icon'>📄</span> ")
-            .append(chain.get(i));
+        sb.append("<span class='connector'>└─</span> <span class='icon'>⚠️</span> <b>")
+            .append(target)
+            .append("</b>");
         sb.append("</div>");
-      }
 
-      // Target (Vulnerable)
-      String target = chain.get(chain.size() - 1);
-      sb.append("<div class='chain-item target' style='padding-left: ")
-          .append(chain.size() * 20)
-          .append("px;'>");
-      sb.append("<span class='connector'>└─</span> <span class='icon'>⚠️</span> <b>")
-          .append(target)
-          .append("</b>");
-      sb.append("</div>");
+        sb.append("</div>"); // End snyk-chain
 
-      sb.append("</div>");
-
-      // Remediation
-      if (chain.size() > 1) {
-        sb.append("<div class='remediation-box'>");
-        sb.append("<div class='remediation-title'>Remediation</div>");
-        sb.append("<p>Upgrade <code>")
-            .append(chain.get(0))
-            .append("</code> to remove this vulnerability.</p>");
-        sb.append("</div>");
+        // Remediation
+        if (chain.size() > 1) {
+          sb.append("<div class='remediation-box'>");
+          sb.append("<div class='remediation-title'>Remediation</div>");
+          sb.append("<p>Upgrade <code>")
+              .append(chain.get(0))
+              .append("</code> to remove this vulnerability.</p>");
+          sb.append("</div>");
+        }
       }
     }
 
@@ -240,14 +246,15 @@ public class SapoToolWindow {
         + textColor
         + "; line-height: 1.5; }"
         + "h1 { font-size: 20px; font-weight: 600; margin: 0; }"
-        + ".snyk-chain { font-family: 'JetBrains Mono', monospace; margin: 16px 0; font-size: 13px; }"
+        + ".path-header { font-weight: bold; margin-top: 12px; margin-bottom: 4px; color: #2196f3; font-size: 14px; }"
+        + ".snyk-chain { font-family: 'JetBrains Mono', monospace; margin: 8px 0; font-size: 13px; }"
         + ".chain-item { padding: 4px 0; display: flex; align-items: center; }"
         + ".connector { color: #888; margin-right: 8px; }"
         + ".icon { margin-right: 6px; }"
         + ".target { color: #e53935; font-weight: bold; }"
         + ".remediation-box { background: "
         + (isDark ? "#1a2a3a" : "#e3f2fd")
-        + "; border: 1px solid #2196f3; border-radius: 4px; padding: 12px; margin-top: 16px; }"
+        + "; border: 1px solid #2196f3; border-radius: 4px; padding: 12px; margin-top: 8px; margin-bottom: 16px; }"
         + ".remediation-title { font-weight: 800; color: #2196f3; text-transform: uppercase; font-size: 11px; margin-bottom: 4px; }"
         + ".card { background: "
         + cardBg

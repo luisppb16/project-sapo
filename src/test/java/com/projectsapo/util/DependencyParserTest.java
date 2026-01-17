@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import org.jetbrains.idea.maven.model.MavenArtifact;
 import org.jetbrains.idea.maven.model.MavenArtifactNode;
 import org.jetbrains.idea.maven.project.MavenProject;
@@ -112,6 +113,9 @@ class DependencyParserTest {
     assertEquals("com.example:lib", pkg.name());
     assertEquals("1.0.0", pkg.version());
     assertEquals("Maven", pkg.ecosystem());
+    // Verify it has chains
+    assertNotNull(pkg.dependencyChains());
+    assertFalse(pkg.dependencyChains().isEmpty());
   }
 
   @Test
@@ -188,5 +192,86 @@ class DependencyParserTest {
 
       // Assert
       assertTrue(result.isEmpty());
+  }
+
+  @Test
+  void testParseDependencies_Deduplication() {
+    // Arrange
+    // We simulate two sources (e.g. Maven) providing the same dependency but different paths
+    when(mavenProjectsManager.hasProjects()).thenReturn(true);
+    when(mavenProjectsManager.getProjects()).thenReturn(List.of(mavenProject));
+
+    // Create two artifact nodes representing the same artifact but different locations
+    MavenArtifactNode node1 = mock(MavenArtifactNode.class);
+    MavenArtifact artifact1 = mock(MavenArtifact.class);
+    when(node1.getArtifact()).thenReturn(artifact1);
+    when(artifact1.getGroupId()).thenReturn("com.example");
+    when(artifact1.getArtifactId()).thenReturn("common");
+    when(artifact1.getVersion()).thenReturn("1.0.0");
+    when(node1.getDependencies()).thenReturn(new ArrayList<>()); // No children
+
+    // Node 2: Same artifact
+    MavenArtifactNode node2 = mock(MavenArtifactNode.class);
+    MavenArtifact artifact2 = mock(MavenArtifact.class);
+    when(node2.getArtifact()).thenReturn(artifact2);
+    when(artifact2.getGroupId()).thenReturn("com.example");
+    when(artifact2.getArtifactId()).thenReturn("common");
+    when(artifact2.getVersion()).thenReturn("1.0.0");
+    when(node2.getDependencies()).thenReturn(new ArrayList<>());
+
+    // Set the tree to have both
+    // Actually DependencyParser iterates over getDependencyTree which returns roots (direct dependencies).
+    // If we want different paths, usually one is direct and one is transitive.
+    // Let's make node1 a direct dependency and node2 a child of another direct dependency.
+
+    // Direct dependency A -> common
+    MavenArtifactNode nodeA = mock(MavenArtifactNode.class);
+    MavenArtifact artifactA = mock(MavenArtifact.class);
+    when(nodeA.getArtifact()).thenReturn(artifactA);
+    when(artifactA.getGroupId()).thenReturn("com.example");
+    when(artifactA.getArtifactId()).thenReturn("A");
+    when(artifactA.getVersion()).thenReturn("2.0.0");
+    when(nodeA.getDependencies()).thenReturn(List.of(node1)); // A depends on common
+
+    // Direct dependency B -> common (represented by node2)
+    MavenArtifactNode nodeB = mock(MavenArtifactNode.class);
+    MavenArtifact artifactB = mock(MavenArtifact.class);
+    when(nodeB.getArtifact()).thenReturn(artifactB);
+    when(artifactB.getGroupId()).thenReturn("com.example");
+    when(artifactB.getArtifactId()).thenReturn("B");
+    when(artifactB.getVersion()).thenReturn("2.0.0");
+    when(nodeB.getDependencies()).thenReturn(List.of(node2)); // B depends on common
+
+    when(mavenProject.getDependencyTree()).thenReturn(List.of(nodeA, nodeB));
+
+    // Act
+    List<OsvPackage> result = DependencyParser.parseDependencies(project);
+
+    // Assert
+    // We expect: A, B, and common.
+    // "common" should appear ONCE.
+    // "A" and "B" appear once.
+    // Total 3 packages.
+
+    long commonCount = result.stream()
+        .filter(p -> p.name().equals("com.example:common") && p.version().equals("1.0.0"))
+        .count();
+
+    assertEquals(1, commonCount, "Dependency should be deduplicated");
+
+    OsvPackage commonPkg = result.stream()
+        .filter(p -> p.name().equals("com.example:common"))
+        .findFirst()
+        .orElseThrow();
+
+    assertEquals(2, commonPkg.dependencyChains().size(), "Should have 2 chains");
+
+    // Chains should be: [A, common] and [B, common]
+    Set<List<String>> chains = commonPkg.dependencyChains();
+    boolean hasPathA = chains.stream().anyMatch(c -> c.contains("com.example:A") && c.contains("com.example:common"));
+    boolean hasPathB = chains.stream().anyMatch(c -> c.contains("com.example:B") && c.contains("com.example:common"));
+
+    assertTrue(hasPathA, "Should contain path through A");
+    assertTrue(hasPathB, "Should contain path through B");
   }
 }
