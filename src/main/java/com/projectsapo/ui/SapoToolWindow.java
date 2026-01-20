@@ -6,6 +6,7 @@
 package com.projectsapo.ui;
 
 import com.intellij.icons.AllIcons;
+import com.intellij.ide.BrowserUtil;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Splitter;
@@ -29,6 +30,10 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableRowSorter;
+import org.cef.browser.CefBrowser;
+import org.cef.browser.CefFrame;
+import org.cef.handler.CefRequestHandlerAdapter;
+import org.cef.network.CefRequest;
 
 /**
  * Modern UI for Project Sapo using JCEF. Replicates Snyk's design for dependency chains and
@@ -51,6 +56,27 @@ public class SapoToolWindow {
     this.project = project;
     this.content = new JPanel(new BorderLayout());
     this.browser = new JBCefBrowser();
+
+    // Open links in system browser
+    this.browser
+        .getJBCefClient()
+        .addRequestHandler(
+            new CefRequestHandlerAdapter() {
+              @Override
+              public boolean onBeforeBrowse(
+                  CefBrowser browser,
+                  CefFrame frame,
+                  CefRequest request,
+                  boolean userGesture,
+                  boolean isRedirect) {
+                if (userGesture) {
+                  BrowserUtil.browse(request.getURL());
+                  return true;
+                }
+                return false;
+              }
+            },
+            this.browser.getCefBrowser());
 
     JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
     scanButton = new JButton("Scan Dependencies");
@@ -220,7 +246,11 @@ public class SapoToolWindow {
             .append("'>")
             .append(sev)
             .append("</span>");
-        sb.append("<span class='vuln-id'>").append(vuln.id()).append("</span>");
+        sb.append("<span class='vuln-id'><a href='https://osv.dev/vulnerability/")
+            .append(vuln.id())
+            .append("'>")
+            .append(vuln.id())
+            .append("</a></span>");
         sb.append("</div>");
         sb.append("<div class='vuln-summary'>")
             .append(vuln.summary() != null ? vuln.summary() : "No summary")
@@ -231,6 +261,20 @@ public class SapoToolWindow {
         sb.append("<div class='details'>")
             .append(vuln.details() != null ? vuln.details().replace("\n", "<br>") : "")
             .append("</div>");
+
+        if (vuln.references() != null && !vuln.references().isEmpty()) {
+          sb.append("<div class='references-section'>");
+          sb.append("<div class='references-title'>References</div>");
+          for (OsvVulnerability.Reference ref : vuln.references()) {
+            sb.append("<div class='reference-item'><a href='")
+                .append(ref.url())
+                .append("'>")
+                .append(ref.url())
+                .append("</a></div>");
+          }
+          sb.append("</div>");
+        }
+
         sb.append("</div>");
       }
     } else {
@@ -272,6 +316,12 @@ public class SapoToolWindow {
         + ".badge { padding: 4px 8px; border-radius: 4px; color: white; font-size: 11px; font-weight: 800; margin-right: 12px; text-transform: uppercase; }"
         + ".critical { background: #b71c1c; } .high { background: #e65100; } .medium { background: #f57f17; color: white; } .low { background: #33691e; }"
         + ".fixed-box { background: rgba(67, 160, 71, 0.1); color: #2e7d32; padding: 4px 8px; border-radius: 4px; font-weight: 600; display: inline-block; margin: 8px 0; }"
+        + ".references-section { margin-top: 16px; border-top: 1px solid "
+        + borderColor
+        + "; padding-top: 12px; }"
+        + ".references-title { font-weight: 800; color: #888; text-transform: uppercase; font-size: 10px; margin-bottom: 8px; }"
+        + ".reference-item { font-size: 12px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }"
+        + "a { color: #2196f3; text-decoration: none; } a:hover { text-decoration: underline; }"
         + "</style></head><body>"
         + bodyContent
         + "</body></html>";
