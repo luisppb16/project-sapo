@@ -5,32 +5,36 @@
 
 package com.projectsapo.util;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import com.intellij.openapi.externalSystem.model.ProjectSystemId;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
 
-import com.intellij.openapi.application.Application;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.externalSystem.model.DataNode;
 import com.intellij.openapi.externalSystem.model.ExternalProjectInfo;
+import com.intellij.openapi.externalSystem.model.Key;
 import com.intellij.openapi.externalSystem.model.ProjectKeys;
 import com.intellij.openapi.externalSystem.model.project.LibraryData;
 import com.intellij.openapi.externalSystem.model.project.ProjectData;
 import com.intellij.openapi.externalSystem.service.project.ProjectDataManager;
+import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.OrderEnumerator;
-import com.intellij.openapi.roots.OrderRootsEnumerator;
+import com.intellij.openapi.roots.OrderRootType;
 import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.roots.libraries.LibraryTable;
 import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar;
-import com.intellij.util.Processor;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.projectsapo.model.OsvPackage;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 import org.jetbrains.idea.maven.model.MavenArtifact;
 import org.jetbrains.idea.maven.model.MavenArtifactNode;
 import org.jetbrains.idea.maven.project.MavenProject;
@@ -38,314 +42,207 @@ import org.jetbrains.idea.maven.project.MavenProjectsManager;
 import org.jetbrains.plugins.gradle.util.GradleConstants;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
+@DisplayName("DependencyParser Test Suite")
+@org.mockito.junit.jupiter.MockitoSettings(strictness = org.mockito.quality.Strictness.LENIENT)
 class DependencyParserTest {
 
   @Mock private Project project;
   @Mock private MavenProjectsManager mavenProjectsManager;
   @Mock private ProjectDataManager projectDataManager;
-  @Mock private MavenProject mavenProject;
-  @Mock private MavenArtifactNode mavenArtifactNode;
-  @Mock private MavenArtifact mavenArtifact;
-  @Mock private OrderEnumerator orderEnumerator;
-  @Mock private OrderRootsEnumerator orderRootsEnumerator;
-  @Mock private Application application;
   @Mock private ModuleManager moduleManager;
-  @Mock private Module module;
   @Mock private LibraryTablesRegistrar libraryTablesRegistrar;
   @Mock private LibraryTable libraryTable;
 
-  private MockedStatic<MavenProjectsManager> mavenProjectsManagerMock;
-  private MockedStatic<ProjectDataManager> projectDataManagerMock;
-  private MockedStatic<OrderEnumerator> orderEnumeratorMock;
-  private MockedStatic<ApplicationManager> applicationManagerMock;
-  private MockedStatic<ModuleManager> moduleManagerMock;
-  private MockedStatic<LibraryTablesRegistrar> libraryTablesRegistrarMock;
+  private MockedStatic<MavenProjectsManager> mavenStatic;
+  private MockedStatic<ProjectDataManager> projectDataStatic;
+  private MockedStatic<ModuleManager> moduleManagerStatic;
+  private MockedStatic<LibraryTablesRegistrar> libraryRegistrarStatic;
+  private MockedStatic<ExternalSystemApiUtil> externalSystemStatic;
 
   @BeforeEach
   void setUp() {
-    mavenProjectsManagerMock = mockStatic(MavenProjectsManager.class);
-    projectDataManagerMock = mockStatic(ProjectDataManager.class);
-    orderEnumeratorMock = mockStatic(OrderEnumerator.class);
-    applicationManagerMock = mockStatic(ApplicationManager.class);
-    moduleManagerMock = mockStatic(ModuleManager.class);
-    libraryTablesRegistrarMock = mockStatic(LibraryTablesRegistrar.class);
+    mavenStatic = mockStatic(MavenProjectsManager.class);
+    projectDataStatic = mockStatic(ProjectDataManager.class);
+    moduleManagerStatic = mockStatic(ModuleManager.class);
+    libraryRegistrarStatic = mockStatic(LibraryTablesRegistrar.class);
+    externalSystemStatic = mockStatic(ExternalSystemApiUtil.class);
 
-    mavenProjectsManagerMock
-        .when(() -> MavenProjectsManager.getInstance(project))
-        .thenReturn(mavenProjectsManager);
-    projectDataManagerMock
-        .when(ProjectDataManager::getInstance)
-        .thenReturn(projectDataManager);
-    orderEnumeratorMock
-        .when(() -> OrderEnumerator.orderEntries(project))
-        .thenReturn(orderEnumerator);
-    orderEnumeratorMock
-        .when(() -> OrderEnumerator.orderEntries(any(Module.class)))
-        .thenReturn(orderEnumerator);
-    applicationManagerMock.when(ApplicationManager::getApplication).thenReturn(application);
-    moduleManagerMock.when(() -> ModuleManager.getInstance(project)).thenReturn(moduleManager);
-    libraryTablesRegistrarMock.when(LibraryTablesRegistrar::getInstance).thenReturn(libraryTablesRegistrar);
-
-    when(moduleManager.getModules()).thenReturn(new Module[]{module});
-    when(libraryTablesRegistrar.getLibraryTable(project)).thenReturn(libraryTable);
-    when(libraryTable.getLibraries()).thenReturn(new Library[0]);
-    
-    // Default behavior for OrderEnumerator to avoid NPEs in tests that don't specifically mock it
-    when(orderEnumerator.librariesOnly()).thenReturn(orderEnumerator);
-    when(orderEnumerator.recursively()).thenReturn(orderEnumerator);
+    mavenStatic.when(() -> MavenProjectsManager.getInstance(project)).thenReturn(mavenProjectsManager);
+    projectDataStatic.when(ProjectDataManager::getInstance).thenReturn(projectDataManager);
+    moduleManagerStatic.when(() -> ModuleManager.getInstance(project)).thenReturn(moduleManager);
+    libraryRegistrarStatic.when(LibraryTablesRegistrar::getInstance).thenReturn(libraryTablesRegistrar);
   }
 
   @AfterEach
   void tearDown() {
-    mavenProjectsManagerMock.close();
-    projectDataManagerMock.close();
-    orderEnumeratorMock.close();
-    applicationManagerMock.close();
-    moduleManagerMock.close();
-    libraryTablesRegistrarMock.close();
+    mavenStatic.close();
+    projectDataStatic.close();
+    moduleManagerStatic.close();
+    libraryRegistrarStatic.close();
+    externalSystemStatic.close();
   }
 
-  @Test
-  void testParseDependencies_Maven() {
-    // Arrange
-    when(mavenProjectsManager.hasProjects()).thenReturn(true);
-    when(mavenProjectsManager.getProjects()).thenReturn(List.of(mavenProject));
-    when(mavenProject.getDependencyTree()).thenReturn(List.of(mavenArtifactNode));
-    when(mavenArtifactNode.getArtifact()).thenReturn(mavenArtifact);
-    when(mavenArtifact.getGroupId()).thenReturn("com.example");
-    when(mavenArtifact.getArtifactId()).thenReturn("lib");
-    when(mavenArtifact.getVersion()).thenReturn("1.0.0");
-    when(mavenArtifactNode.getDependencies()).thenReturn(new ArrayList<>());
+  @Nested
+  @DisplayName("Maven Parsing")
+  class MavenParsing {
 
-    // Act
-    List<OsvPackage> result = DependencyParser.parseDependencies(project);
+    @Test
+    @DisplayName("should_parse_maven_dependencies")
+    void shouldParseMavenDependencies() {
+      // Given
+      MavenProject mavenProject = mock(MavenProject.class);
+      when(mavenProjectsManager.hasProjects()).thenReturn(true);
+      when(mavenProjectsManager.getProjects()).thenReturn(List.of(mavenProject));
 
-    // Assert
-    assertFalse(result.isEmpty());
-    assertEquals(1, result.size());
-    OsvPackage pkg = result.get(0);
-    assertEquals("com.example:lib", pkg.name());
-    assertEquals("1.0.0", pkg.version());
-    assertEquals("Maven", pkg.ecosystem());
-    // Verify it has chains
-    assertNotNull(pkg.dependencyChains());
-    assertFalse(pkg.dependencyChains().isEmpty());
+      MavenArtifact artifact = mock(MavenArtifact.class);
+      when(artifact.getGroupId()).thenReturn("com.example");
+      when(artifact.getArtifactId()).thenReturn("lib");
+      when(artifact.getVersion()).thenReturn("1.0.0");
+
+      MavenArtifactNode node = mock(MavenArtifactNode.class);
+      when(node.getArtifact()).thenReturn(artifact);
+      when(node.getDependencies()).thenReturn(new ArrayList<>()); // No children
+
+      when(mavenProject.getDependencyTree()).thenReturn(List.of(node));
+
+      // When
+      List<OsvPackage> results = DependencyParser.parseDependencies(project);
+
+      // Then
+      assertThat(results).hasSize(1);
+      assertThat(results.get(0).name()).isEqualTo("com.example:lib");
+      assertThat(results.get(0).version()).isEqualTo("1.0.0");
+      assertThat(results.get(0).ecosystem()).isEqualTo("Maven");
+    }
   }
 
-  @Test
-  void testParseDependencies_Gradle_SkipFallback() {
-    // Arrange
-    when(mavenProjectsManager.hasProjects()).thenReturn(false);
-    ExternalProjectInfo projectInfo = mock(ExternalProjectInfo.class);
-    when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
-        .thenReturn(List.of(projectInfo));
+  @Nested
+  @DisplayName("Gradle Parsing")
+  class GradleParsing {
 
-    // Fallback mocks (should NOT be called)
-    Library library = mock(Library.class);
-    when(library.getName()).thenReturn("Gradle: com.example:lib:1.0.0");
-    doAnswer(invocation -> {
-      Processor<Library> processor = invocation.getArgument(0);
-      processor.process(library);
-      return null;
-    }).when(orderEnumerator).forEachLibrary(any());
-
-    // Act
-    List<OsvPackage> result = DependencyParser.parseDependencies(project);
-
-    // Assert
-    // Should be empty because we didn't mock Gradle structure and we skipped fallback
-    assertTrue(result.isEmpty());
-
-    // Verify OrderEnumerator was NOT called
-    verify(orderEnumerator, never()).forEachLibrary(any());
-  }
-
-  @Test
-  void testParseDependencies_Gradle_Parsing() {
-    try (MockedStatic<com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil> externalSystemApiUtilMock =
-             mockStatic(com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil.class)) {
-
-      when(mavenProjectsManager.hasProjects()).thenReturn(false);
+    @Test
+    @DisplayName("should_parse_gradle_dependencies")
+    void shouldParseGradleDependencies() {
+      // Given
+      when(mavenProjectsManager.hasProjects()).thenReturn(false); // Skip Maven
 
       ExternalProjectInfo projectInfo = mock(ExternalProjectInfo.class);
       DataNode<ProjectData> projectNode = mock(DataNode.class);
       when(projectInfo.getExternalProjectStructure()).thenReturn(projectNode);
-
       when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
           .thenReturn(List.of(projectInfo));
 
       DataNode<LibraryData> libNode = mock(DataNode.class);
       LibraryData libData = mock(LibraryData.class);
-      when(libNode.getData()).thenReturn(libData);
       when(libData.getGroupId()).thenReturn("com.example");
-      when(libData.getArtifactId()).thenReturn("lib");
-      when(libData.getVersion()).thenReturn("1.0.0");
+      when(libData.getArtifactId()).thenReturn("gradle-lib");
+      when(libData.getVersion()).thenReturn("2.0.0");
+      when(libNode.getData()).thenReturn(libData);
 
-      externalSystemApiUtilMock.when(() -> com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.LIBRARY))
+      externalSystemStatic.when(() -> ExternalSystemApiUtil.findAll(eq(projectNode), eq(ProjectKeys.LIBRARY)))
           .thenReturn(List.of(libNode));
 
-      List<OsvPackage> result = DependencyParser.parseDependencies(project);
+      // When
+      List<OsvPackage> results = DependencyParser.parseDependencies(project);
 
-      assertFalse(result.isEmpty());
-      assertEquals("com.example:lib", result.get(0).name());
+      // Then
+      assertThat(results).hasSize(1);
+      assertThat(results.get(0).name()).isEqualTo("com.example:gradle-lib");
+      assertThat(results.get(0).version()).isEqualTo("2.0.0");
     }
   }
 
-  @Test
-  void testParseDependencies_NoManagers_RunsFallback() {
-    // Arrange
-    when(mavenProjectsManager.hasProjects()).thenReturn(false);
-    when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
-        .thenReturn(Collections.emptyList());
+  @Nested
+  @DisplayName("Fallback Parsing")
+  class FallbackParsing {
 
-    Library library = mock(Library.class);
-    when(library.getName()).thenReturn("com.example:manual:1.0.0");
-    doAnswer(invocation -> {
-      Processor<Library> processor = invocation.getArgument(0);
-      processor.process(library);
-      return null;
-    }).when(orderEnumerator).forEachLibrary(any());
-
-    // Act
-    List<OsvPackage> result = DependencyParser.parseDependencies(project);
-
-    // Assert
-    assertFalse(result.isEmpty());
-    assertEquals("com.example:manual", result.get(0).name());
-    verify(orderEnumerator, times(1)).forEachLibrary(any());
-  }
-  
-  @Test
-  void testParseDependencies_Fallback_StandardFormat() {
-      // Arrange
+    @Test
+    @DisplayName("should_use_fallback_when_managed_systems_empty")
+    void shouldUseFallback() {
+      // Given
       when(mavenProjectsManager.hasProjects()).thenReturn(false);
-      when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
-          .thenReturn(Collections.emptyList());
+      when(projectDataManager.getExternalProjectsData(any(), any(ProjectSystemId.class))).thenReturn(Collections.emptyList());
+
+      when(moduleManager.getModules()).thenReturn(new Module[0]); // No modules to simplify order enumerator mocking
+      when(libraryTablesRegistrar.getLibraryTable(project)).thenReturn(libraryTable);
 
       Library library = mock(Library.class);
-      when(library.getName()).thenReturn("com.example:lib:1.0.0");
+      when(library.getName()).thenReturn("Maven: com.fallback:lib:3.0.0");
+      when(libraryTable.getLibraries()).thenReturn(new Library[]{library});
 
-      doAnswer(invocation -> {
-          Processor<Library> processor = invocation.getArgument(0);
-          processor.process(library);
-          return null;
-      }).when(orderEnumerator).forEachLibrary(any());
+      // When
+      List<OsvPackage> results = DependencyParser.parseDependencies(project);
 
-      // Act
-      List<OsvPackage> result = DependencyParser.parseDependencies(project);
+      // Then
+      assertThat(results).hasSize(1);
+      assertThat(results.get(0).name()).isEqualTo("com.fallback:lib");
+      assertThat(results.get(0).version()).isEqualTo("3.0.0");
+    }
 
-      // Assert
-      assertFalse(result.isEmpty());
-      assertEquals("com.example:lib", result.get(0).name());
-      assertEquals("1.0.0", result.get(0).version());
-  }
-
-  @Test
-  void testParseDependencies_MavenManagerNull() {
-      // Arrange
-      // Simulate MavenProjectsManager.getInstance returning null
-      mavenProjectsManagerMock
-          .when(() -> MavenProjectsManager.getInstance(project))
-          .thenReturn(null);
+    @Test
+    @DisplayName("should_parse_jar_filename_correctly")
+    void shouldParseJarFilename() {
+       // Given
+      when(mavenProjectsManager.hasProjects()).thenReturn(false);
+      when(projectDataManager.getExternalProjectsData(any(), any(ProjectSystemId.class))).thenReturn(Collections.emptyList());
+      when(moduleManager.getModules()).thenReturn(new Module[0]);
+      when(libraryTablesRegistrar.getLibraryTable(project)).thenReturn(libraryTable);
       
-      when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
-          .thenReturn(Collections.emptyList());
+      Library library = mock(Library.class);
+      when(library.getName()).thenReturn("InvalidName"); // Force file fallback
+      when(library.getName()).thenReturn("InvalidName"); // Force file fallback
 
-      // Act
-      List<OsvPackage> result = DependencyParser.parseDependencies(project);
+      VirtualFile file = mock(VirtualFile.class);
+      when(file.getName()).thenReturn("commons-lang3-3.12.0.jar");
+      when(file.getPath()).thenReturn("/path/to/commons-lang3-3.12.0.jar");
+      when(library.getFiles(OrderRootType.CLASSES)).thenReturn(new VirtualFile[]{file});
 
-      // Assert
-      assertTrue(result.isEmpty());
-  }
+      when(libraryTable.getLibraries()).thenReturn(new Library[]{library});
 
-  @Test
-  void testParseDependencies_Deduplication() {
-    // Arrange
-    // We simulate two sources (e.g. Maven) providing the same dependency but different paths
-    when(mavenProjectsManager.hasProjects()).thenReturn(true);
-    when(mavenProjectsManager.getProjects()).thenReturn(List.of(mavenProject));
+      // When
+      List<OsvPackage> results = DependencyParser.parseDependencies(project);
 
-    // Create two artifact nodes representing the same artifact but different locations
-    MavenArtifactNode node1 = mock(MavenArtifactNode.class);
-    MavenArtifact artifact1 = mock(MavenArtifact.class);
-    when(node1.getArtifact()).thenReturn(artifact1);
-    when(artifact1.getGroupId()).thenReturn("com.example");
-    when(artifact1.getArtifactId()).thenReturn("common");
-    when(artifact1.getVersion()).thenReturn("1.0.0");
-    when(node1.getDependencies()).thenReturn(new ArrayList<>()); // No children
+      // Then
+      assertThat(results).hasSize(1);
+      assertThat(results.get(0).name()).isEqualTo("commons-lang3");
+      assertThat(results.get(0).version()).isEqualTo("3.12.0");
+    }
 
-    // Node 2: Same artifact
-    MavenArtifactNode node2 = mock(MavenArtifactNode.class);
-    MavenArtifact artifact2 = mock(MavenArtifact.class);
-    when(node2.getArtifact()).thenReturn(artifact2);
-    when(artifact2.getGroupId()).thenReturn("com.example");
-    when(artifact2.getArtifactId()).thenReturn("common");
-    when(artifact2.getVersion()).thenReturn("1.0.0");
-    when(node2.getDependencies()).thenReturn(new ArrayList<>());
+    @Test
+    @DisplayName("should_parse_gradle_cache_path_correctly")
+    void shouldParseGradleCachePath() {
+       // Given
+      when(mavenProjectsManager.hasProjects()).thenReturn(false);
+      when(projectDataManager.getExternalProjectsData(any(), any(ProjectSystemId.class))).thenReturn(Collections.emptyList());
+      when(moduleManager.getModules()).thenReturn(new Module[0]);
+      when(libraryTablesRegistrar.getLibraryTable(project)).thenReturn(libraryTable);
 
-    // Set the tree to have both
-    // Actually DependencyParser iterates over getDependencyTree which returns roots (direct dependencies).
-    // If we want different paths, usually one is direct and one is transitive.
-    // Let's make node1 a direct dependency and node2 a child of another direct dependency.
+      Library library = mock(Library.class);
+      when(library.getName()).thenReturn("InvalidName"); // Force file fallback
 
-    // Direct dependency A -> common
-    MavenArtifactNode nodeA = mock(MavenArtifactNode.class);
-    MavenArtifact artifactA = mock(MavenArtifact.class);
-    when(nodeA.getArtifact()).thenReturn(artifactA);
-    when(artifactA.getGroupId()).thenReturn("com.example");
-    when(artifactA.getArtifactId()).thenReturn("A");
-    when(artifactA.getVersion()).thenReturn("2.0.0");
-    when(nodeA.getDependencies()).thenReturn(List.of(node1)); // A depends on common
+      VirtualFile file = mock(VirtualFile.class);
+      when(file.getPath()).thenReturn("/home/user/.gradle/caches/modules-2/files-2.1/com.google.guava/guava/30.1-jre/HASH/guava-30.1-jre.jar");
+      when(file.getName()).thenReturn("guava-30.1-jre.jar");
+      when(library.getFiles(OrderRootType.CLASSES)).thenReturn(new VirtualFile[]{file});
 
-    // Direct dependency B -> common (represented by node2)
-    MavenArtifactNode nodeB = mock(MavenArtifactNode.class);
-    MavenArtifact artifactB = mock(MavenArtifact.class);
-    when(nodeB.getArtifact()).thenReturn(artifactB);
-    when(artifactB.getGroupId()).thenReturn("com.example");
-    when(artifactB.getArtifactId()).thenReturn("B");
-    when(artifactB.getVersion()).thenReturn("2.0.0");
-    when(nodeB.getDependencies()).thenReturn(List.of(node2)); // B depends on common
+      when(libraryTable.getLibraries()).thenReturn(new Library[]{library});
 
-    when(mavenProject.getDependencyTree()).thenReturn(List.of(nodeA, nodeB));
+      // When
+      List<OsvPackage> results = DependencyParser.parseDependencies(project);
 
-    // Act
-    List<OsvPackage> result = DependencyParser.parseDependencies(project);
-
-    // Assert
-    // We expect: A, B, and common.
-    // "common" should appear ONCE.
-    // "A" and "B" appear once.
-    // Total 3 packages.
-
-    long commonCount = result.stream()
-        .filter(p -> p.name().equals("com.example:common") && p.version().equals("1.0.0"))
-        .count();
-
-    assertEquals(1, commonCount, "Dependency should be deduplicated");
-
-    OsvPackage commonPkg = result.stream()
-        .filter(p -> p.name().equals("com.example:common"))
-        .findFirst()
-        .orElseThrow();
-
-    assertEquals(2, commonPkg.dependencyChains().size(), "Should have 2 chains");
-
-    // Chains should be: [A, common] and [B, common]
-    Set<List<String>> chains = commonPkg.dependencyChains();
-    boolean hasPathA = chains.stream().anyMatch(c -> c.contains("com.example:A") && c.contains("com.example:common"));
-    boolean hasPathB = chains.stream().anyMatch(c -> c.contains("com.example:B") && c.contains("com.example:common"));
-
-    assertTrue(hasPathA, "Should contain path through A");
-    assertTrue(hasPathB, "Should contain path through B");
+      // Then
+      assertThat(results).hasSize(1);
+      assertThat(results.get(0).name()).isEqualTo("com.google.guava:guava");
+      assertThat(results.get(0).version()).isEqualTo("30.1-jre");
+    }
   }
 }

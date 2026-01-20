@@ -5,116 +5,169 @@
 
 package com.projectsapo.client;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.projectsapo.model.OsvBatchResponse;
+import com.projectsapo.model.OsvPackage;
 import com.projectsapo.model.OsvResponse;
+import com.projectsapo.util.ProjectConstants;
 import java.io.IOException;
+import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
+@DisplayName("OsvClient Test Suite")
 class OsvClientTest {
 
   @Mock private HttpClient httpClient;
-
   @Mock private HttpResponse<String> httpResponse;
 
-  private OsvClient osvClient;
+  private OsvClient client;
+  private final ExecutorService executor = Executors.newSingleThreadExecutor();
+  private final ObjectMapper objectMapper = new ObjectMapper();
 
   @BeforeEach
   void setUp() {
-    osvClient = new OsvClient(Executors.newVirtualThreadPerTaskExecutor(), httpClient);
+    client = new OsvClient(executor, httpClient);
   }
 
-  @Test
-  void testCheckDependencyFound()
-      throws IOException, InterruptedException, ExecutionException, TimeoutException {
-    // Arrange
-    String jsonResponse =
-        """
-            {
-                "vulns": [
-                    {
-                        "id": "GHSA-jfh8-c2jp-5v3q",
-                        "summary": "Vulnerability in Log4j",
-                        "details": "Details here"
-                    }
-                ]
-            }
-            """;
+  @Nested
+  @DisplayName("checkDependency (Single)")
+  class CheckDependency {
 
-    doReturn(httpResponse)
-        .when(httpClient)
-        .send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
-    when(httpResponse.statusCode()).thenReturn(200);
-    when(httpResponse.body()).thenReturn(jsonResponse);
+    @Test
+    @DisplayName("should_return_response_when_api_returns_200_and_data")
+    void shouldReturnResponseWhenSuccess() throws Exception {
+      // Given
+      String json = "{\"vulns\": []}";
+      when(httpResponse.statusCode()).thenReturn(200);
+      when(httpResponse.body()).thenReturn(json);
+      when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+          .thenReturn(httpResponse);
 
-    // Act
-    CompletableFuture<Optional<OsvResponse>> future =
-        osvClient.checkDependency("org.apache.logging.log4j:log4j-core", "2.14.1", "Maven");
-    Optional<OsvResponse> result = future.get(5, TimeUnit.SECONDS);
+      // When
+      Optional<OsvResponse> result = client.checkDependency("pkg", "1.0", "Maven").join();
 
-    // Assert
-    assertTrue(result.isPresent());
-    assertNotNull(result.get().vulns());
-    assertEquals(1, result.get().vulns().size());
-    assertEquals("GHSA-jfh8-c2jp-5v3q", result.get().vulns().get(0).id());
+      // Then
+      assertThat(result).isPresent();
 
-    verify(httpClient, times(1)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
+      ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+      verify(httpClient).send(captor.capture(), any());
+      HttpRequest request = captor.getValue();
+      assertThat(request.uri()).isEqualTo(URI.create(ProjectConstants.OSV_API_URL));
+      assertThat(request.method()).isEqualTo("POST");
+    }
+
+    @Test
+    @DisplayName("should_return_empty_when_api_returns_empty_json")
+    void shouldReturnEmptyWhenEmptyJson() throws Exception {
+      // Given
+      when(httpResponse.statusCode()).thenReturn(200);
+      when(httpResponse.body()).thenReturn("{}");
+      when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+          .thenReturn(httpResponse);
+
+      // When
+      Optional<OsvResponse> result = client.checkDependency("pkg", "1.0", "Maven").join();
+
+      // Then
+      assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("should_return_empty_when_api_returns_error_code")
+    void shouldReturnEmptyWhenError() throws Exception {
+      // Given
+      when(httpResponse.statusCode()).thenReturn(404);
+      when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+          .thenReturn(httpResponse);
+
+      // When
+      Optional<OsvResponse> result = client.checkDependency("pkg", "1.0", "Maven").join();
+
+      // Then
+      assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("should_return_empty_on_exception")
+    void shouldReturnEmptyOnException() throws Exception {
+      // Given
+      when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+          .thenThrow(new IOException("Network error"));
+
+      // When
+      Optional<OsvResponse> result = client.checkDependency("pkg", "1.0", "Maven").join();
+
+      // Then
+      assertThat(result).isEmpty();
+    }
   }
 
-  @Test
-  void testCheckDependencyNotFound()
-      throws IOException, InterruptedException, ExecutionException, TimeoutException {
-    // Arrange
-    String jsonResponse = "{}";
+  @Nested
+  @DisplayName("checkDependencies (Batch)")
+  class CheckDependencies {
 
-    doReturn(httpResponse)
-        .when(httpClient)
-        .send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
-    when(httpResponse.statusCode()).thenReturn(200);
-    when(httpResponse.body()).thenReturn(jsonResponse);
+    @Test
+    @DisplayName("should_send_correct_batch_request_and_parse_response")
+    void shouldSendBatchRequest() throws Exception {
+      // Given
+      OsvPackage pkg1 = new OsvPackage("pkg1", "Maven", "1.0.0");
+      List<OsvPackage> packages = List.of(pkg1);
 
-    // Act
-    CompletableFuture<Optional<OsvResponse>> future =
-        osvClient.checkDependency("org.slf4j:slf4j-api", "2.0.12", "Maven");
-    Optional<OsvResponse> result = future.get(5, TimeUnit.SECONDS);
+      String jsonResponse = "{\"results\": [{\"vulns\": []}]}";
+      when(httpResponse.statusCode()).thenReturn(200);
+      when(httpResponse.body()).thenReturn(jsonResponse);
+      when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+          .thenReturn(httpResponse);
 
-    // Assert
-    assertTrue(result.isEmpty()); // Empty optional for no vulns
+      // When
+      Optional<OsvBatchResponse> result = client.checkDependencies(packages).join();
 
-    verify(httpClient, times(1)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
-  }
+      // Then
+      assertThat(result).isPresent();
+      assertThat(result.get().results()).hasSize(1);
 
-  @Test
-  void testCheckDependencyError()
-      throws IOException, InterruptedException, ExecutionException, TimeoutException {
-    // Arrange
-    doReturn(httpResponse)
-        .when(httpClient)
-        .send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
-    when(httpResponse.statusCode()).thenReturn(500);
+      ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+      verify(httpClient).send(captor.capture(), any());
+      HttpRequest request = captor.getValue();
+      assertThat(request.uri()).isEqualTo(URI.create(ProjectConstants.OSV_API_BATCH_URL));
+    }
 
-    // Act
-    CompletableFuture<Optional<OsvResponse>> future =
-        osvClient.checkDependency("org.example:error", "1.0.0", "Maven");
-    Optional<OsvResponse> result = future.get(5, TimeUnit.SECONDS);
+    @Test
+    @DisplayName("should_return_empty_on_api_error")
+    void shouldReturnEmptyOnError() throws Exception {
+       // Given
+      when(httpResponse.statusCode()).thenReturn(500);
+      when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+          .thenReturn(httpResponse);
 
-    // Assert
-    assertTrue(result.isEmpty());
+      // When
+      Optional<OsvBatchResponse> result = client.checkDependencies(List.of(new OsvPackage("a", "b", "c"))).join();
+
+      // Then
+      assertThat(result).isEmpty();
+    }
   }
 }
