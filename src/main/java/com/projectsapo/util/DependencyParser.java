@@ -70,7 +70,7 @@ public final class DependencyParser {
               return true;
             });
 
-    // Aggregation: Deduplicate based on name, version, ecosystem
+    // Aggregation: Deduplicate based on name, version, ecosystem (Optimized with Record key)
     Map<PackageKey, List<OsvPackage>> grouped =
         allPackages.stream()
             .collect(
@@ -172,5 +172,4 @@ public final class DependencyParser {
     return null;
   }
 
-  private record PackageKey(String name, String version, String ecosystem) {}
 }
