@@ -6,6 +6,8 @@
 package com.projectsapo.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.projectsapo.model.OsvBatchQuery;
+import com.projectsapo.model.OsvBatchResponse;
 import com.projectsapo.model.OsvPackage;
 import com.projectsapo.model.OsvQuery;
 import com.projectsapo.model.OsvResponse;
@@ -82,6 +84,47 @@ public class OsvClient {
 
               OsvResponse osvResponse = objectMapper.readValue(response.body(), OsvResponse.class);
               return Optional.of(osvResponse);
+            } else {
+              return Optional.empty();
+            }
+
+          } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+              Thread.currentThread().interrupt();
+            }
+            return Optional.empty();
+          }
+        },
+        executorService);
+  }
+
+  public CompletableFuture<Optional<OsvBatchResponse>> checkDependencies(
+      java.util.List<OsvPackage> packages) {
+    Objects.requireNonNull(packages, "Packages list cannot be null");
+
+    return CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            java.util.List<OsvQuery> queries =
+                packages.stream().map(pkg -> new OsvQuery(pkg.version(), pkg)).toList();
+
+            OsvBatchQuery batchQuery = new OsvBatchQuery(queries);
+            String requestBody = objectMapper.writeValueAsString(batchQuery);
+
+            HttpRequest request =
+                HttpRequest.newBuilder()
+                    .uri(URI.create(ProjectConstants.OSV_API_BATCH_URL))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .build();
+
+            HttpResponse<String> response =
+                httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+              OsvBatchResponse batchResponse =
+                  objectMapper.readValue(response.body(), OsvBatchResponse.class);
+              return Optional.of(batchResponse);
             } else {
               return Optional.empty();
             }
