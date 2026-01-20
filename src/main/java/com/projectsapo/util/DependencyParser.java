@@ -57,12 +57,14 @@ public final class DependencyParser {
 
   public static List<OsvPackage> parseDependencies(@NotNull Project project) {
     List<OsvPackage> allPackages = new ArrayList<>();
+    boolean isManagedProject = false;
 
     // 1. Maven: Real tree support
     try {
       MavenProjectsManager mavenManager = MavenProjectsManager.getInstance(project);
       if (mavenManager != null && mavenManager.hasProjects()) {
         allPackages.addAll(parseMavenDependencies(mavenManager));
+        isManagedProject = true;
       }
     } catch (Throwable t) {
       LOG.warn("Failed to parse Maven dependencies", t);
@@ -74,9 +76,16 @@ public final class DependencyParser {
           ProjectDataManager.getInstance().getExternalProjectsData(project, GradleConstants.SYSTEM_ID);
       if (!gradleProjects.isEmpty()) {
         allPackages.addAll(parseGradleDependencies(gradleProjects));
+        isManagedProject = true;
       }
     } catch (Throwable t) {
       LOG.warn("Failed to parse Gradle dependencies", t);
+    }
+
+    // If managed build systems are detected, we skip manual fallbacks to avoid redundant scanning
+    // and potential performance issues with large projects.
+    if (isManagedProject) {
+      return deduplicateAndSort(allPackages);
     }
 
     // 3. Fallback: OrderEnumerator (Module Libraries) - Always run to catch manual libs
@@ -112,6 +121,10 @@ public final class DependencyParser {
       LOG.warn("Failed to parse project libraries", t);
     }
 
+    return deduplicateAndSort(allPackages);
+  }
+
+  private static List<OsvPackage> deduplicateAndSort(List<OsvPackage> allPackages) {
     // Aggregation: Deduplicate based on name, version, ecosystem
     Map<DependencyGroupingKey, List<OsvPackage>> grouped =
         allPackages.stream()

@@ -15,9 +15,13 @@ import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.externalSystem.model.ExternalProjectInfo;
 import com.intellij.openapi.externalSystem.service.project.ProjectDataManager;
+import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.OrderEnumerator;
 import com.intellij.openapi.roots.libraries.Library;
+import com.intellij.openapi.roots.libraries.LibraryTable;
+import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar;
 import com.intellij.util.Processor;
 import com.projectsapo.model.OsvPackage;
 import java.util.ArrayList;
@@ -43,11 +47,17 @@ class DependencyParserBenchmarkTest {
   @Mock private MavenProject mavenProject;
   @Mock private OrderEnumerator orderEnumerator;
   @Mock private Application application;
+  @Mock private ModuleManager moduleManager;
+  @Mock private Module module;
+  @Mock private LibraryTablesRegistrar libraryTablesRegistrar;
+  @Mock private LibraryTable libraryTable;
 
   private MockedStatic<MavenProjectsManager> mavenProjectsManagerMock;
   private MockedStatic<ProjectDataManager> projectDataManagerMock;
   private MockedStatic<OrderEnumerator> orderEnumeratorMock;
   private MockedStatic<ApplicationManager> applicationManagerMock;
+  private MockedStatic<ModuleManager> moduleManagerMock;
+  private MockedStatic<LibraryTablesRegistrar> libraryTablesRegistrarMock;
   private AutoCloseable mocks;
 
   @BeforeEach
@@ -57,6 +67,8 @@ class DependencyParserBenchmarkTest {
     projectDataManagerMock = mockStatic(ProjectDataManager.class);
     orderEnumeratorMock = mockStatic(OrderEnumerator.class);
     applicationManagerMock = mockStatic(ApplicationManager.class);
+    moduleManagerMock = mockStatic(ModuleManager.class);
+    libraryTablesRegistrarMock = mockStatic(LibraryTablesRegistrar.class);
 
     mavenProjectsManagerMock
         .when(() -> MavenProjectsManager.getInstance(project))
@@ -65,11 +77,21 @@ class DependencyParserBenchmarkTest {
         .when(ProjectDataManager::getInstance)
         .thenReturn(projectDataManager);
     orderEnumeratorMock
+        .when(() -> OrderEnumerator.orderEntries(any(Module.class)))
+        .thenReturn(orderEnumerator);
+    orderEnumeratorMock
         .when(() -> OrderEnumerator.orderEntries(project))
         .thenReturn(orderEnumerator);
     applicationManagerMock.when(ApplicationManager::getApplication).thenReturn(application);
+    moduleManagerMock.when(() -> ModuleManager.getInstance(project)).thenReturn(moduleManager);
+    libraryTablesRegistrarMock.when(LibraryTablesRegistrar::getInstance).thenReturn(libraryTablesRegistrar);
+
+    when(moduleManager.getModules()).thenReturn(new Module[]{module});
+    when(libraryTablesRegistrar.getLibraryTable(project)).thenReturn(libraryTable);
+    when(libraryTable.getLibraries()).thenReturn(new Library[0]);
 
     when(orderEnumerator.librariesOnly()).thenReturn(orderEnumerator);
+    when(orderEnumerator.recursively()).thenReturn(orderEnumerator);
   }
 
   @AfterEach
@@ -78,6 +100,8 @@ class DependencyParserBenchmarkTest {
     projectDataManagerMock.close();
     orderEnumeratorMock.close();
     applicationManagerMock.close();
+    moduleManagerMock.close();
+    libraryTablesRegistrarMock.close();
     mocks.close();
   }
 
