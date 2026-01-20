@@ -19,8 +19,11 @@ import com.intellij.util.ui.UIUtil;
 import com.projectsapo.model.OsvVulnerability;
 import com.projectsapo.service.VulnerabilityScannerService;
 import java.awt.*;
+import java.text.NumberFormat;
+import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
@@ -311,12 +314,13 @@ public class SapoToolWindow {
       for (OsvVulnerability.Severity s : v.severity()) {
         if ("CVSS_V3".equals(s.type()) || "CVSS_V2".equals(s.type())) {
           try {
-            double sc = Double.parseDouble(s.score());
+            double sc =
+                NumberFormat.getInstance(Locale.ROOT).parse(s.score()).doubleValue();
             if (sc >= 9.0) return "CRITICAL";
             if (sc >= 7.0) return "HIGH";
             if (sc >= 4.0) return "MEDIUM";
             return "LOW";
-          } catch (NumberFormatException ignored) {
+          } catch (ParseException | NumberFormatException ignored) {
           }
         }
       }
