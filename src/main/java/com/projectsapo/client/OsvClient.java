@@ -25,8 +25,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Client for interacting with the OSV.dev API to check for vulnerabilities. Uses Java 21 Virtual
- * Threads for asynchronous execution.
+ * Client for interacting with the OSV.dev API to check for vulnerabilities.
+ * Uses a cached thread pool for asynchronous execution to ensure compatibility with Java 11/17.
  */
 public class OsvClient {
 
@@ -35,7 +35,8 @@ public class OsvClient {
   private final ExecutorService executorService;
 
   public OsvClient() {
-    this(Executors.newVirtualThreadPerTaskExecutor());
+    // Changed from newVirtualThreadPerTaskExecutor to newCachedThreadPool for compatibility
+    this(Executors.newCachedThreadPool());
   }
 
   public OsvClient(ExecutorService executorService) {

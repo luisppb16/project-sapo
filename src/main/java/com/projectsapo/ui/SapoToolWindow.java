@@ -120,33 +120,36 @@ public class SapoToolWindow {
     scanResults.clear();
 
     VulnerabilityScannerService.getInstance(project)
-        .scanDependencies(
-            result -> {
-              ApplicationManager.getApplication()
-                  .invokeLater(
-                      () -> {
-                        scanResults.add(result);
-                        String highestSev = getHighestSeverity(result.vulnerabilities());
-                        tableModel.addRow(
-                            new Object[] {
-                              getSeverityIcon(highestSev),
-                              result.pkg().name(),
-                              result.pkg().version(),
-                              result.vulnerabilities().size()
-                            });
-                      });
-            })
-        .whenComplete(
-            (v, ex) ->
+        .scanDependencies()
+        .thenAccept(
+            results ->
                 ApplicationManager.getApplication()
                     .invokeLater(
                         () -> {
+                          scanResults.addAll(results);
+                          for (VulnerabilityScannerService.ScanResult result : results) {
+                            String highestSev = getHighestSeverity(result.vulnerabilities());
+                            tableModel.addRow(
+                                new Object[] {
+                                  getSeverityIcon(highestSev),
+                                  result.pkg().name(),
+                                  result.pkg().version(),
+                                  result.vulnerabilities().size()
+                                });
+                          }
                           scanButton.setEnabled(true);
-                          statusLabel.setText(
-                              ex != null
-                                  ? "Scan failed"
-                                  : "Scan complete (" + scanResults.size() + ")");
-                        }));
+                          statusLabel.setText("Scan complete (" + results.size() + ")");
+                        }))
+        .exceptionally(
+            ex -> {
+              ApplicationManager.getApplication()
+                  .invokeLater(
+                      () -> {
+                        scanButton.setEnabled(true);
+                        statusLabel.setText("Scan failed");
+                      });
+              return null;
+            });
   }
 
   private void showDetails(VulnerabilityScannerService.ScanResult result) {

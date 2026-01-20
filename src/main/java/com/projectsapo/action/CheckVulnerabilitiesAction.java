@@ -18,7 +18,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.projectsapo.service.VulnerabilityScannerService;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.List;
 import org.jetbrains.annotations.NotNull;
 
 /** Action to trigger vulnerability checks. */
@@ -37,36 +37,40 @@ public class CheckVulnerabilitiesAction extends AnAction {
 
     ProgressManager.getInstance()
         .run(
-            new Task.Backgroundable(project, "Checking Vulnerabilities", true) {
+            new Task.Backgroundable(project, "Checking vulnerabilities", true) {
               @Override
               public void run(@NotNull ProgressIndicator indicator) {
                 indicator.setIndeterminate(true);
-                AtomicInteger vulnerableCount = new AtomicInteger(0);
 
-                VulnerabilityScannerService.getInstance(project)
-                    .scanDependencies(
-                        result -> {
-                          if (result.vulnerable()) {
-                            vulnerableCount.incrementAndGet();
-                            // We don't spam notifications anymore, the tool window handles details
-                          }
-                        })
-                    .join();
+                try {
+                  List<VulnerabilityScannerService.ScanResult> results =
+                      VulnerabilityScannerService.getInstance(project)
+                          .scanDependencies()
+                          .join();
 
-                if (vulnerableCount.get() > 0) {
-                  showNotification(
-                      project,
-                      "Project Sapo",
-                      "Scan complete. Found vulnerabilities in "
-                          + vulnerableCount.get()
-                          + " dependencies. Check the Project Sapo tool window for details.",
-                      NotificationType.WARNING);
-                } else {
-                  showNotification(
-                      project,
-                      "Project Sapo",
-                      "Scan complete. No vulnerabilities found.",
-                      NotificationType.INFORMATION);
+                  long vulnerableCount = results.stream().filter(VulnerabilityScannerService.ScanResult::vulnerable).count();
+
+                  if (vulnerableCount > 0) {
+                    showNotification(
+                        project,
+                        "Project Sapo",
+                        "Scan complete. Found vulnerabilities in "
+                            + vulnerableCount
+                            + " dependencies. Check the Project Sapo tool window for details.",
+                        NotificationType.WARNING);
+                  } else {
+                    showNotification(
+                        project,
+                        "Project Sapo",
+                        "Scan complete. No vulnerabilities found.",
+                        NotificationType.INFORMATION);
+                  }
+                } catch (Exception ex) {
+                   showNotification(
+                        project,
+                        "Project Sapo",
+                        "Scan failed: " + ex.getMessage(),
+                        NotificationType.ERROR);
                 }
               }
             });

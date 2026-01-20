@@ -5,24 +5,30 @@
 
 package com.projectsapo.util;
 
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.externalSystem.model.DataNode;
 import com.intellij.openapi.externalSystem.model.ExternalProjectInfo;
 import com.intellij.openapi.externalSystem.model.ProjectKeys;
 import com.intellij.openapi.externalSystem.model.project.LibraryData;
+import com.intellij.openapi.externalSystem.model.project.ModuleData;
 import com.intellij.openapi.externalSystem.model.project.ProjectData;
 import com.intellij.openapi.externalSystem.service.project.ProjectDataManager;
 import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil;
+import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.OrderEnumerator;
+import com.intellij.openapi.roots.OrderRootType;
 import com.intellij.openapi.roots.libraries.Library;
+import com.intellij.openapi.roots.libraries.LibraryTable;
+import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.projectsapo.model.OsvPackage;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -40,7 +46,10 @@ import org.jetbrains.plugins.gradle.util.GradleConstants;
  */
 public final class DependencyParser {
 
-  private static final Pattern GRADLE_LIB_PATTERN = Pattern.compile("^Gradle: (.+):(.+):(.+)$");
+  private static final Logger LOG = Logger.getInstance(DependencyParser.class);
+  private static final Pattern JAR_VERSION_PATTERN = Pattern.compile("^(.+?)-(\\d[\\w\\.-]*)$");
+  // Matches Gradle cache path: .../modules-2/files-2.1/group/artifact/version/...
+  private static final Pattern GRADLE_CACHE_PATTERN = Pattern.compile(".*/modules-2/files-2\\.1/([^/]+)/([^/]+)/([^/]+)/.*");
 
   private DependencyParser() {
     throw new UnsupportedOperationException("Utility class");
@@ -48,37 +57,59 @@ public final class DependencyParser {
 
   public static List<OsvPackage> parseDependencies(@NotNull Project project) {
     List<OsvPackage> allPackages = new ArrayList<>();
-    boolean managedDependenciesFound = false;
 
     // 1. Maven: Real tree support
-    MavenProjectsManager mavenManager = MavenProjectsManager.getInstance(project);
-    if (mavenManager != null && mavenManager.hasProjects()) {
-      allPackages.addAll(parseMavenDependencies(mavenManager));
-      managedDependenciesFound = true;
+    try {
+      MavenProjectsManager mavenManager = MavenProjectsManager.getInstance(project);
+      if (mavenManager != null && mavenManager.hasProjects()) {
+        allPackages.addAll(parseMavenDependencies(mavenManager));
+      }
+    } catch (Throwable t) {
+      LOG.warn("Failed to parse Maven dependencies", t);
     }
 
     // 2. Gradle: External System support
-    Collection<ExternalProjectInfo> gradleProjects =
-        ProjectDataManager.getInstance().getExternalProjectsData(project, GradleConstants.SYSTEM_ID);
-    if (!gradleProjects.isEmpty()) {
-      allPackages.addAll(parseGradleDependencies(gradleProjects));
-      managedDependenciesFound = true;
+    try {
+      Collection<ExternalProjectInfo> gradleProjects =
+          ProjectDataManager.getInstance().getExternalProjectsData(project, GradleConstants.SYSTEM_ID);
+      if (!gradleProjects.isEmpty()) {
+        allPackages.addAll(parseGradleDependencies(gradleProjects));
+      }
+    } catch (Throwable t) {
+      LOG.warn("Failed to parse Gradle dependencies", t);
     }
 
-    // 3. Fallback: OrderEnumerator
-    // If we found managed dependencies (Maven/Gradle), we assume the project is fully managed
-    // and skip the redundant (and expensive) OrderEnumerator iteration.
-    if (!managedDependenciesFound) {
-      OrderEnumerator.orderEntries(project)
-          .librariesOnly()
-          .forEachLibrary(
-              library -> {
-                OsvPackage pkg = parseLibrary(library);
-                if (pkg != null) {
-                  allPackages.add(pkg);
-                }
-                return true;
-              });
+    // 3. Fallback: OrderEnumerator (Module Libraries) - Always run to catch manual libs
+    try {
+      Module[] modules = ModuleManager.getInstance(project).getModules();
+      for (Module module : modules) {
+        OrderEnumerator.orderEntries(module)
+            .recursively()
+            .librariesOnly()
+            .forEachLibrary(
+                library -> {
+                  OsvPackage pkg = parseLibrary(library);
+                  if (pkg != null) {
+                    allPackages.add(pkg);
+                  }
+                  return true;
+                });
+      }
+    } catch (Throwable t) {
+      LOG.warn("Failed to parse module dependencies via OrderEnumerator", t);
+    }
+
+    // 4. Fallback: Project Libraries - Always run
+    try {
+      LibraryTable projectLibraryTable = LibraryTablesRegistrar.getInstance().getLibraryTable(project);
+      for (Library library : projectLibraryTable.getLibraries()) {
+        OsvPackage pkg = parseLibrary(library);
+        if (pkg != null) {
+          allPackages.add(pkg);
+        }
+      }
+    } catch (Throwable t) {
+      LOG.warn("Failed to parse project libraries", t);
     }
 
     // Aggregation: Deduplicate based on name, version, ecosystem
@@ -141,40 +172,93 @@ public final class DependencyParser {
       DataNode<ProjectData> projectNode = info.getExternalProjectStructure();
       if (projectNode == null) continue;
 
-      Collection<DataNode<LibraryData>> libraryNodes =
-          ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.LIBRARY);
-      for (DataNode<LibraryData> libNode : libraryNodes) {
-        LibraryData data = libNode.getData();
-        String group = data.getGroupId();
-        String artifact = data.getArtifactId();
-        String version = data.getVersion();
+      // Check for libraries at project level
+      processLibraryNodes(ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.LIBRARY), dependencies);
 
-        if (group != null && artifact != null && version != null) {
-          String fullName = group + ":" + artifact;
-          // For Gradle, we treat it as direct if we can't easily find the parent in this flat list
-          dependencies.add(
-              new OsvPackage(fullName, "Maven", version, Set.of(List.of(fullName))));
-        }
+      // Check for libraries at module level
+      Collection<DataNode<ModuleData>> moduleNodes =
+          ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.MODULE);
+      for (DataNode<ModuleData> moduleNode : moduleNodes) {
+        processLibraryNodes(ExternalSystemApiUtil.findAll(moduleNode, ProjectKeys.LIBRARY), dependencies);
       }
     }
     return dependencies;
   }
 
+  private static void processLibraryNodes(
+      Collection<DataNode<LibraryData>> libraryNodes, List<OsvPackage> dependencies) {
+    for (DataNode<LibraryData> libNode : libraryNodes) {
+      LibraryData data = libNode.getData();
+      String group = data.getGroupId();
+      String artifact = data.getArtifactId();
+      String version = data.getVersion();
+
+      if (group != null && artifact != null && version != null) {
+        String fullName = group + ":" + artifact;
+        dependencies.add(
+            new OsvPackage(fullName, "Maven", version, Set.of(List.of(fullName))));
+      }
+    }
+  }
+
   private static OsvPackage parseLibrary(Library library) {
     String name = library.getName();
     if (name == null) return null;
-    Matcher matcher = GRADLE_LIB_PATTERN.matcher(name);
-    if (matcher.matches()) {
-      String fullName = matcher.group(1) + ":" + matcher.group(2);
-      return new OsvPackage(
-          fullName, "Maven", matcher.group(3), Set.of(List.of(fullName)));
+
+    // 1. Try parsing from Library Name
+    String cleanName = name;
+    if (cleanName.startsWith("Gradle: ")) {
+        cleanName = cleanName.substring(8);
+    } else if (cleanName.startsWith("Maven: ")) {
+        cleanName = cleanName.substring(7);
     }
-    String[] parts = name.split(":");
-    if (parts.length == 3) {
+
+    String[] parts = cleanName.split(":");
+    if (parts.length >= 3) {
       String fullName = parts[0] + ":" + parts[1];
-      return new OsvPackage(
-          fullName, "Maven", parts[2], Set.of(List.of(fullName)));
+      String version = parts[2];
+      
+      // Handle artifacts with classifiers or packaging (e.g. @aar)
+      int atIndex = version.indexOf('@');
+      if (atIndex > 0) {
+          version = version.substring(0, atIndex);
+      }
+      
+      if (!parts[0].isBlank() && !parts[1].isBlank()) {
+          return new OsvPackage(
+              fullName, "Maven", version, Set.of(List.of(fullName)));
+      }
     }
+
+    // 2. Fallback: Try parsing from Jar Filename or Path
+    VirtualFile[] files = library.getFiles(OrderRootType.CLASSES);
+    for (VirtualFile file : files) {
+        String path = file.getPath();
+        
+        // Try Gradle Cache Pattern
+        Matcher cacheMatcher = GRADLE_CACHE_PATTERN.matcher(path);
+        if (cacheMatcher.matches()) {
+            String group = cacheMatcher.group(1);
+            String artifact = cacheMatcher.group(2);
+            String version = cacheMatcher.group(3);
+            return new OsvPackage(group + ":" + artifact, "Maven", version, Set.of(List.of(group + ":" + artifact)));
+        }
+
+        String filename = file.getName();
+        // Remove extension
+        int dotIndex = filename.lastIndexOf('.');
+        if (dotIndex > 0) {
+            filename = filename.substring(0, dotIndex);
+        }
+        
+        Matcher matcher = JAR_VERSION_PATTERN.matcher(filename);
+        if (matcher.matches()) {
+            String artifact = matcher.group(1);
+            String version = matcher.group(2);
+            return new OsvPackage(artifact, "Maven", version, Set.of(List.of(artifact)));
+        }
+    }
+
     return null;
   }
 
