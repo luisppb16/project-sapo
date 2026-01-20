@@ -44,6 +44,7 @@ public class SapoToolWindow {
   private final JButton scanButton;
   private final JLabel statusLabel;
   private final List<VulnerabilityScannerService.ScanResult> scanResults = new ArrayList<>();
+  private static final NumberFormat NUMBER_FORMAT = NumberFormat.getInstance(Locale.ROOT);
 
   public SapoToolWindow(Project project, ToolWindow toolWindow) {
     this.project = project;
@@ -314,8 +315,7 @@ public class SapoToolWindow {
       for (OsvVulnerability.Severity s : v.severity()) {
         if ("CVSS_V3".equals(s.type()) || "CVSS_V2".equals(s.type())) {
           try {
-            double sc =
-                NumberFormat.getInstance(Locale.ROOT).parse(s.score()).doubleValue();
+            double sc = NUMBER_FORMAT.parse(s.score()).doubleValue();
             if (sc >= 9.0) return "CRITICAL";
             if (sc >= 7.0) return "HIGH";
             if (sc >= 4.0) return "MEDIUM";
