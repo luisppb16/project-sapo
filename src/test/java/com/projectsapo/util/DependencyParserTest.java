@@ -16,10 +16,14 @@ import com.intellij.openapi.externalSystem.model.ProjectKeys;
 import com.intellij.openapi.externalSystem.model.project.LibraryData;
 import com.intellij.openapi.externalSystem.model.project.ProjectData;
 import com.intellij.openapi.externalSystem.service.project.ProjectDataManager;
+import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.OrderEnumerator;
 import com.intellij.openapi.roots.OrderRootsEnumerator;
 import com.intellij.openapi.roots.libraries.Library;
+import com.intellij.openapi.roots.libraries.LibraryTable;
+import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar;
 import com.intellij.util.Processor;
 import com.projectsapo.model.OsvPackage;
 import java.util.ArrayList;
@@ -55,11 +59,17 @@ class DependencyParserTest {
   @Mock private OrderEnumerator orderEnumerator;
   @Mock private OrderRootsEnumerator orderRootsEnumerator;
   @Mock private Application application;
+  @Mock private ModuleManager moduleManager;
+  @Mock private Module module;
+  @Mock private LibraryTablesRegistrar libraryTablesRegistrar;
+  @Mock private LibraryTable libraryTable;
 
   private MockedStatic<MavenProjectsManager> mavenProjectsManagerMock;
   private MockedStatic<ProjectDataManager> projectDataManagerMock;
   private MockedStatic<OrderEnumerator> orderEnumeratorMock;
   private MockedStatic<ApplicationManager> applicationManagerMock;
+  private MockedStatic<ModuleManager> moduleManagerMock;
+  private MockedStatic<LibraryTablesRegistrar> libraryTablesRegistrarMock;
 
   @BeforeEach
   void setUp() {
@@ -67,6 +77,8 @@ class DependencyParserTest {
     projectDataManagerMock = mockStatic(ProjectDataManager.class);
     orderEnumeratorMock = mockStatic(OrderEnumerator.class);
     applicationManagerMock = mockStatic(ApplicationManager.class);
+    moduleManagerMock = mockStatic(ModuleManager.class);
+    libraryTablesRegistrarMock = mockStatic(LibraryTablesRegistrar.class);
 
     mavenProjectsManagerMock
         .when(() -> MavenProjectsManager.getInstance(project))
@@ -77,10 +89,20 @@ class DependencyParserTest {
     orderEnumeratorMock
         .when(() -> OrderEnumerator.orderEntries(project))
         .thenReturn(orderEnumerator);
+    orderEnumeratorMock
+        .when(() -> OrderEnumerator.orderEntries(any(Module.class)))
+        .thenReturn(orderEnumerator);
     applicationManagerMock.when(ApplicationManager::getApplication).thenReturn(application);
+    moduleManagerMock.when(() -> ModuleManager.getInstance(project)).thenReturn(moduleManager);
+    libraryTablesRegistrarMock.when(LibraryTablesRegistrar::getInstance).thenReturn(libraryTablesRegistrar);
+
+    when(moduleManager.getModules()).thenReturn(new Module[]{module});
+    when(libraryTablesRegistrar.getLibraryTable(project)).thenReturn(libraryTable);
+    when(libraryTable.getLibraries()).thenReturn(new Library[0]);
     
     // Default behavior for OrderEnumerator to avoid NPEs in tests that don't specifically mock it
     when(orderEnumerator.librariesOnly()).thenReturn(orderEnumerator);
+    when(orderEnumerator.recursively()).thenReturn(orderEnumerator);
   }
 
   @AfterEach
@@ -89,6 +111,8 @@ class DependencyParserTest {
     projectDataManagerMock.close();
     orderEnumeratorMock.close();
     applicationManagerMock.close();
+    moduleManagerMock.close();
+    libraryTablesRegistrarMock.close();
   }
 
   @Test

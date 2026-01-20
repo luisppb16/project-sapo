@@ -103,15 +103,15 @@ class CheckVulnerabilitiesActionTest {
     }).when(progressManager).run(any(Task.Backgroundable.class));
 
     // Mock the scanner service to complete immediately
-    when(scannerService.scanDependencies(any(Consumer.class)))
-        .thenReturn(CompletableFuture.completedFuture(null));
+    when(scannerService.scanDependencies())
+        .thenReturn(CompletableFuture.completedFuture(java.util.Collections.emptyList()));
 
     // Act
     action.actionPerformed(event);
 
     // Assert
     verify(toolWindow).show();
-    verify(scannerService).scanDependencies(any(Consumer.class));
+    verify(scannerService).scanDependencies();
     // Verify notification was sent (either success or warning, depending on callback execution which is empty here)
     notificationsBusMock.verify(() -> Notifications.Bus.notify(any(Notification.class), eq(project)));
   }

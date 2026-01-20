@@ -104,13 +104,8 @@ class SapoToolWindowTest {
     VulnerabilityScannerService.ScanResult result =
         new VulnerabilityScannerService.ScanResult(pkg, false, List.of());
 
-    when(scannerService.scanDependencies(any(Consumer.class)))
-        .thenAnswer(
-            invocation -> {
-              Consumer<VulnerabilityScannerService.ScanResult> consumer = invocation.getArgument(0);
-              consumer.accept(result);
-              return CompletableFuture.completedFuture(null);
-            });
+    when(scannerService.scanDependencies())
+        .thenReturn(CompletableFuture.completedFuture(List.of(result)));
 
     // Act
     // Trigger the scan button action (simulated)
@@ -119,7 +114,7 @@ class SapoToolWindowTest {
     scanButton.doClick();
 
     // Assert
-    verify(scannerService).scanDependencies(any(Consumer.class));
+    verify(scannerService).scanDependencies();
   }
 
   private JButton findScanButton(JComponent component) {
