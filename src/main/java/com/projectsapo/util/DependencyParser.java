@@ -48,27 +48,38 @@ public final class DependencyParser {
 
   public static List<OsvPackage> parseDependencies(@NotNull Project project) {
     List<OsvPackage> allPackages = new ArrayList<>();
+    boolean managedDependenciesFound = false;
 
     // 1. Maven: Real tree support
     MavenProjectsManager mavenManager = MavenProjectsManager.getInstance(project);
     if (mavenManager != null && mavenManager.hasProjects()) {
-      allPackages.addAll(parseMavenDependencies(project));
+      allPackages.addAll(parseMavenDependencies(mavenManager));
+      managedDependenciesFound = true;
     }
 
     // 2. Gradle: External System support
-    allPackages.addAll(parseGradleDependencies(project));
+    Collection<ExternalProjectInfo> gradleProjects =
+        ProjectDataManager.getInstance().getExternalProjectsData(project, GradleConstants.SYSTEM_ID);
+    if (!gradleProjects.isEmpty()) {
+      allPackages.addAll(parseGradleDependencies(gradleProjects));
+      managedDependenciesFound = true;
+    }
 
     // 3. Fallback: OrderEnumerator
-    OrderEnumerator.orderEntries(project)
-        .librariesOnly()
-        .forEachLibrary(
-            library -> {
-              OsvPackage pkg = parseLibrary(library);
-              if (pkg != null) {
-                allPackages.add(pkg);
-              }
-              return true;
-            });
+    // If we found managed dependencies (Maven/Gradle), we assume the project is fully managed
+    // and skip the redundant (and expensive) OrderEnumerator iteration.
+    if (!managedDependenciesFound) {
+      OrderEnumerator.orderEntries(project)
+          .librariesOnly()
+          .forEachLibrary(
+              library -> {
+                OsvPackage pkg = parseLibrary(library);
+                if (pkg != null) {
+                  allPackages.add(pkg);
+                }
+                return true;
+              });
+    }
 
     // Aggregation: Deduplicate based on name, version, ecosystem
     Map<DependencyGroupingKey, List<OsvPackage>> grouped =
@@ -96,11 +107,8 @@ public final class DependencyParser {
         .toList();
   }
 
-  private static List<OsvPackage> parseMavenDependencies(Project project) {
+  private static List<OsvPackage> parseMavenDependencies(MavenProjectsManager projectsManager) {
     List<OsvPackage> dependencies = new ArrayList<>();
-    MavenProjectsManager projectsManager = MavenProjectsManager.getInstance(project);
-    if (projectsManager == null) return dependencies;
-
     for (MavenProject mavenProject : projectsManager.getProjects()) {
       for (MavenArtifactNode node : mavenProject.getDependencyTree()) {
         // Start chain with the direct dependency itself
@@ -125,11 +133,9 @@ public final class DependencyParser {
     }
   }
 
-  private static List<OsvPackage> parseGradleDependencies(Project project) {
+  private static List<OsvPackage> parseGradleDependencies(
+      Collection<ExternalProjectInfo> projectInfos) {
     List<OsvPackage> dependencies = new ArrayList<>();
-    Collection<ExternalProjectInfo> projectInfos =
-        ProjectDataManager.getInstance()
-            .getExternalProjectsData(project, GradleConstants.SYSTEM_ID);
 
     for (ExternalProjectInfo info : projectInfos) {
       DataNode<ProjectData> projectNode = info.getExternalProjectStructure();

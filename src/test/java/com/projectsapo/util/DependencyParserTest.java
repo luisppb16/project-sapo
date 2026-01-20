@@ -119,25 +119,77 @@ class DependencyParserTest {
   }
 
   @Test
-  void testParseDependencies_Gradle() {
+  void testParseDependencies_Gradle_SkipFallback() {
     // Arrange
     when(mavenProjectsManager.hasProjects()).thenReturn(false);
-
     ExternalProjectInfo projectInfo = mock(ExternalProjectInfo.class);
-    DataNode<ProjectData> projectNode = mock(DataNode.class);
-
     when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
         .thenReturn(List.of(projectInfo));
-    when(projectInfo.getExternalProjectStructure()).thenReturn(projectNode);
-    
-    // Let's test the fallback mechanism which uses OrderEnumerator
+
+    // Fallback mocks (should NOT be called)
     Library library = mock(Library.class);
     when(library.getName()).thenReturn("Gradle: com.example:lib:1.0.0");
-    
     doAnswer(invocation -> {
-        Processor<Library> processor = invocation.getArgument(0);
-        processor.process(library);
-        return null;
+      Processor<Library> processor = invocation.getArgument(0);
+      processor.process(library);
+      return null;
+    }).when(orderEnumerator).forEachLibrary(any());
+
+    // Act
+    List<OsvPackage> result = DependencyParser.parseDependencies(project);
+
+    // Assert
+    // Should be empty because we didn't mock Gradle structure and we skipped fallback
+    assertTrue(result.isEmpty());
+
+    // Verify OrderEnumerator was NOT called
+    verify(orderEnumerator, never()).forEachLibrary(any());
+  }
+
+  @Test
+  void testParseDependencies_Gradle_Parsing() {
+    try (MockedStatic<com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil> externalSystemApiUtilMock =
+             mockStatic(com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil.class)) {
+
+      when(mavenProjectsManager.hasProjects()).thenReturn(false);
+
+      ExternalProjectInfo projectInfo = mock(ExternalProjectInfo.class);
+      DataNode<ProjectData> projectNode = mock(DataNode.class);
+      when(projectInfo.getExternalProjectStructure()).thenReturn(projectNode);
+
+      when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
+          .thenReturn(List.of(projectInfo));
+
+      DataNode<LibraryData> libNode = mock(DataNode.class);
+      LibraryData libData = mock(LibraryData.class);
+      when(libNode.getData()).thenReturn(libData);
+      when(libData.getGroupId()).thenReturn("com.example");
+      when(libData.getArtifactId()).thenReturn("lib");
+      when(libData.getVersion()).thenReturn("1.0.0");
+
+      externalSystemApiUtilMock.when(() -> com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.LIBRARY))
+          .thenReturn(List.of(libNode));
+
+      List<OsvPackage> result = DependencyParser.parseDependencies(project);
+
+      assertFalse(result.isEmpty());
+      assertEquals("com.example:lib", result.get(0).name());
+    }
+  }
+
+  @Test
+  void testParseDependencies_NoManagers_RunsFallback() {
+    // Arrange
+    when(mavenProjectsManager.hasProjects()).thenReturn(false);
+    when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
+        .thenReturn(Collections.emptyList());
+
+    Library library = mock(Library.class);
+    when(library.getName()).thenReturn("com.example:manual:1.0.0");
+    doAnswer(invocation -> {
+      Processor<Library> processor = invocation.getArgument(0);
+      processor.process(library);
+      return null;
     }).when(orderEnumerator).forEachLibrary(any());
 
     // Act
@@ -145,10 +197,8 @@ class DependencyParserTest {
 
     // Assert
     assertFalse(result.isEmpty());
-    assertEquals(1, result.size());
-    OsvPackage pkg = result.get(0);
-    assertEquals("com.example:lib", pkg.name());
-    assertEquals("1.0.0", pkg.version());
+    assertEquals("com.example:manual", result.get(0).name());
+    verify(orderEnumerator, times(1)).forEachLibrary(any());
   }
   
   @Test
