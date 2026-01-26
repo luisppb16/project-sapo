@@ -10,7 +10,6 @@ import com.intellij.ide.BrowserUtil;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Splitter;
-import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.ui.ColorUtil;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.jcef.JBCefBrowser;
@@ -20,12 +19,25 @@ import com.intellij.util.ui.UIUtil;
 import com.projectsapo.model.OsvVulnerability;
 import com.projectsapo.service.VulnerabilityScannerService;
 import java.awt.*;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.text.ParseException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
@@ -41,6 +53,14 @@ import org.cef.network.CefRequest;
  */
 public class SapoToolWindow {
 
+  private static final String UNKNOWN = "Unknown";
+  private static final String CRITICAL = "CRITICAL";
+  private static final String HIGH = "HIGH";
+  private static final String MEDIUM = "MEDIUM";
+  private static final String LOW = "LOW";
+  private static final String SAFE = "SAFE";
+  private static final String DIV_CLOSE = "</div>";
+
   private final JPanel content;
   private final JBTable resultsTable;
   private final DefaultTableModel tableModel;
@@ -49,10 +69,14 @@ public class SapoToolWindow {
   private final JButton scanButton;
   private final JLabel statusLabel;
   private final List<VulnerabilityScannerService.ScanResult> scanResults = new ArrayList<>();
-  private static final ThreadLocal<NumberFormat> NUMBER_FORMAT =
-      ThreadLocal.withInitial(() -> NumberFormat.getInstance(Locale.ROOT));
+  private final NumberFormat numberFormat = NumberFormat.getInstance(Locale.ROOT);
 
-  public SapoToolWindow(Project project, ToolWindow toolWindow) {
+  // Cache for scraped fixed versions: VulnID -> Version
+  private final Map<String, String> scrapedVersions = new ConcurrentHashMap<>();
+  private final Set<String> scrapingInProgress =
+      Collections.newSetFromMap(new ConcurrentHashMap<>());
+
+  public SapoToolWindow(Project project) {
     this.project = project;
     this.content = new JPanel(new BorderLayout());
     this.browser = new JBCefBrowser();
@@ -144,6 +168,8 @@ public class SapoToolWindow {
     statusLabel.setText("Scanning...");
     tableModel.setRowCount(0);
     scanResults.clear();
+    scrapedVersions.clear(); // Clear cache on new scan
+    scrapingInProgress.clear();
 
     VulnerabilityScannerService.getInstance(project)
         .scanDependencies()
@@ -180,72 +206,210 @@ public class SapoToolWindow {
 
   private void showDetails(VulnerabilityScannerService.ScanResult result) {
     StringBuilder sb = new StringBuilder();
-    sb.append("<div class='header'>");
-    sb.append("<h1>").append(result.pkg().name()).append("</h1>");
-    sb.append("<div class='version'>Version: ").append(result.pkg().version()).append("</div>");
-    sb.append("</div>");
+    appendHeader(sb, result);
 
     if (result.vulnerable()) {
-      sb.append("<div class='section-title'>")
-          .append(result.vulnerabilities().size())
-          .append(" Vulnerabilities</div>");
-      for (OsvVulnerability vuln : result.vulnerabilities()) {
-        String sev = getSeverity(vuln);
-        sb.append("<div class='card'>");
-        sb.append("<div class='card-header'>");
-        sb.append("<span class='badge ")
-            .append(sev.toLowerCase())
-            .append("'>")
-            .append(sev)
-            .append("</span>");
-        sb.append("<span class='vuln-id'><a href='https://osv.dev/vulnerability/")
-            .append(vuln.id())
-            .append("'>")
-            .append(vuln.id())
-            .append("</a></span>");
-        sb.append("</div>");
-        sb.append("<div class='vuln-summary'>")
-            .append(vuln.summary() != null ? vuln.summary() : "No summary")
-            .append("</div>");
-        sb.append("<div class='fixed-box'>Fixed in: <span class='fixed-ver'>")
-            .append(findFixedVersion(vuln))
-            .append("</span></div>");
-        sb.append("<div class='details'>")
-            .append(vuln.details() != null ? vuln.details().replace("\n", "<br>") : "")
-            .append("</div>");
-
-        if (vuln.references() != null && !vuln.references().isEmpty()) {
-          sb.append("<div class='references-section'>");
-          sb.append("<div class='references-title'>References</div>");
-          for (OsvVulnerability.Reference ref : vuln.references()) {
-            sb.append("<div class='reference-item'><a href='")
-                .append(ref.url())
-                .append("'>")
-                .append(ref.url())
-                .append("</a></div>");
-          }
-          sb.append("</div>");
-        }
-
-        sb.append("</div>");
-      }
+      appendVulnerableDetails(sb, result);
     } else {
       sb.append("<div class='safe-banner'>✅ No known vulnerabilities found.</div>");
     }
 
+    appendDependencyChains(sb, result);
+
+    browser.loadHTML(generateHtml(sb.toString()));
+  }
+
+  private void appendHeader(StringBuilder sb, VulnerabilityScannerService.ScanResult result) {
+    sb.append("<div class='header'>");
+    sb.append("<h1>").append(result.pkg().name()).append("</h1>");
+    sb.append("<div class='version'>Version: ")
+        .append(result.pkg().version())
+        .append(DIV_CLOSE);
+    sb.append(DIV_CLOSE);
+  }
+
+  private void appendVulnerableDetails(
+      StringBuilder sb, VulnerabilityScannerService.ScanResult result) {
+    Set<String> fixedVersions = new HashSet<>();
+    for (OsvVulnerability vuln : result.vulnerabilities()) {
+      String f = findFixedVersion(vuln, result.pkg().name());
+      if (UNKNOWN.equals(f)) {
+        if (scrapedVersions.containsKey(vuln.id())) {
+          f = scrapedVersions.get(vuln.id());
+        } else {
+          scrapeFixedVersion(vuln.id(), result);
+        }
+      }
+      if (!UNKNOWN.equals(f)) {
+        fixedVersions.add(f);
+      }
+    }
+
+    boolean hasFix = !fixedVersions.isEmpty();
+    String fixedVerStr = hasFix ? String.join(", ", fixedVersions) : UNKNOWN;
+
+    appendRemediation(sb, result, fixedVerStr, hasFix);
+    appendVulnerabilities(sb, result);
+  }
+
+  private void appendRemediation(
+      StringBuilder sb,
+      VulnerabilityScannerService.ScanResult result,
+      String fixedVerStr,
+      boolean hasFix) {
+    sb.append("<div class='remediation-box'>");
+    sb.append("<div class='remediation-title'>Remediation</div>");
+
+    Set<List<String>> chains = result.pkg().dependencyChains();
+    Set<String> roots = new HashSet<>();
+    boolean isDirect = isDirectDependency(chains, roots);
+
+    if (isDirect) {
+      appendDirectRemediation(sb, result, fixedVerStr, hasFix);
+    }
+
+    if (!roots.isEmpty()) {
+      if (isDirect) {
+        sb.append("<hr style='border: 0; border-top: 1px solid #ccc; margin: 8px 0;'/>");
+      }
+      appendTransitiveRemediation(sb, result, fixedVerStr, hasFix, roots);
+    }
+    sb.append(DIV_CLOSE);
+  }
+
+  private boolean isDirectDependency(Set<List<String>> chains, Set<String> roots) {
+    boolean isDirect = false;
+    if (chains != null && !chains.isEmpty()) {
+      for (List<String> chain : chains) {
+        if (chain.size() <= 1) {
+          isDirect = true;
+        } else {
+          roots.add(chain.getFirst());
+        }
+      }
+    } else {
+      isDirect = true;
+    }
+    return isDirect;
+  }
+
+  private void appendDirectRemediation(
+      StringBuilder sb,
+      VulnerabilityScannerService.ScanResult result,
+      String fixedVerStr,
+      boolean hasFix) {
+    if (hasFix) {
+      sb.append("<p>Upgrade <b>")
+          .append(result.pkg().name())
+          .append("</b> to version <b>")
+          .append(fixedVerStr)
+          .append("</b></p>");
+    } else {
+      sb.append("<p>No fixed version available for <b>")
+          .append(result.pkg().name())
+          .append("</b> at this time.</p>");
+      sb.append("<p style='font-size: 11px; color: #888; margin-top: 4px;'>")
+          .append("Checking online sources...")
+          .append("</p>");
+    }
+  }
+
+  private void appendTransitiveRemediation(
+      StringBuilder sb,
+      VulnerabilityScannerService.ScanResult result,
+      String fixedVerStr,
+      boolean hasFix,
+      Set<String> roots) {
+    if (hasFix) {
+      sb.append("<p>For transitive dependencies, upgrade:</p>");
+      sb.append("<ul>");
+      for (String root : roots) {
+        sb.append("<li><code>").append(root).append("</code></li>");
+      }
+      sb.append("</ul>");
+      sb.append("<p>to a version that uses <b>")
+          .append(result.pkg().name())
+          .append("</b> version <b>")
+          .append(fixedVerStr)
+          .append("</b>.</p>");
+    } else {
+      sb.append("<p>Transitive dependency <b>")
+          .append(result.pkg().name())
+          .append("</b> has no fixed version available.</p>");
+      sb.append("<p>Affected roots:</p><ul>");
+      for (String root : roots) {
+        sb.append("<li><code>").append(root).append("</code></li>");
+      }
+      sb.append("</ul>");
+    }
+  }
+
+  private void appendVulnerabilities(
+      StringBuilder sb, VulnerabilityScannerService.ScanResult result) {
+    sb.append("<div class='section-title'>")
+        .append(result.vulnerabilities().size())
+        .append(" Vulnerabilities</div>");
+    for (OsvVulnerability vuln : result.vulnerabilities()) {
+      String sev = getSeverity(vuln);
+      String fixedV = findFixedVersion(vuln, result.pkg().name());
+      if (UNKNOWN.equals(fixedV) && scrapedVersions.containsKey(vuln.id())) {
+        fixedV = scrapedVersions.get(vuln.id());
+      }
+
+      sb.append("<div class='card'>");
+      sb.append("<div class='card-header'>");
+      sb.append("<span class='badge ")
+          .append(sev.toLowerCase())
+          .append("'>")
+          .append(sev)
+          .append("</span>");
+      sb.append("<span class='vuln-id'><a href='https://osv.dev/vulnerability/")
+          .append(vuln.id())
+          .append("'>")
+          .append(vuln.id())
+          .append("</a></span>");
+      sb.append(DIV_CLOSE);
+      sb.append("<div class='vuln-summary'>")
+          .append(vuln.summary() != null ? vuln.summary() : "No summary")
+          .append(DIV_CLOSE);
+      sb.append("<div class='fixed-box'>Fixed in: <span class='fixed-ver'>")
+          .append(fixedV)
+          .append("</span></div>");
+      sb.append("<div class='details'>")
+          .append(vuln.details() != null ? vuln.details().replace("\n", "<br>") : "")
+          .append(DIV_CLOSE);
+
+      if (vuln.references() != null && !vuln.references().isEmpty()) {
+        sb.append("<div class='references-section'>");
+        sb.append("<div class='references-title'>References</div>");
+        for (OsvVulnerability.Reference ref : vuln.references()) {
+          sb.append("<div class='reference-item'><a href='")
+              .append(ref.url())
+              .append("'>")
+              .append(ref.url())
+              .append("</a></div>");
+        }
+        sb.append(DIV_CLOSE);
+      }
+      sb.append(DIV_CLOSE);
+    }
+  }
+
+  private void appendDependencyChains(
+      StringBuilder sb, VulnerabilityScannerService.ScanResult result) {
     Set<List<String>> chains = result.pkg().dependencyChains();
     if (chains != null && !chains.isEmpty()) {
       int pathIndex = 1;
       for (List<String> chain : chains) {
         if (chains.size() > 1) {
-          sb.append("<div class='path-header'>Path #").append(pathIndex++).append("</div>");
+          sb.append("<div class='path-header'>Path #").append(pathIndex++).append(DIV_CLOSE);
         }
         sb.append("<div class='snyk-chain'>");
 
         // Root
         sb.append("<div class='chain-item root'><span class='icon'>📦</span> ")
             .append(project.getName())
-            .append("</div>");
+            .append(DIV_CLOSE);
 
         // Intermediate
         for (int i = 0; i < chain.size() - 1; i++) {
@@ -254,34 +418,69 @@ public class SapoToolWindow {
               .append("px;'>");
           sb.append("<span class='connector'>└─</span> <span class='icon'>📄</span> ")
               .append(chain.get(i));
-          sb.append("</div>");
+          sb.append(DIV_CLOSE);
         }
 
         // Target (Vulnerable)
-        String target = chain.get(chain.size() - 1);
+        String target = chain.getLast();
         sb.append("<div class='chain-item target' style='padding-left: ")
             .append(chain.size() * 20)
             .append("px;'>");
         sb.append("<span class='connector'>└─</span> <span class='icon'>⚠️</span> <b>")
             .append(target)
             .append("</b>");
-        sb.append("</div>");
+        sb.append(DIV_CLOSE);
 
-        sb.append("</div>"); // End snyk-chain
-
-        // Remediation
-        if (chain.size() > 1) {
-          sb.append("<div class='remediation-box'>");
-          sb.append("<div class='remediation-title'>Remediation</div>");
-          sb.append("<p>Upgrade <code>")
-              .append(chain.get(0))
-              .append("</code> to remove this vulnerability.</p>");
-          sb.append("</div>");
-        }
+        sb.append(DIV_CLOSE); // End snyk-chain
       }
     }
+  }
 
-    browser.loadHTML(generateHtml(sb.toString()));
+  private void scrapeFixedVersion(String vulnId, VulnerabilityScannerService.ScanResult result) {
+    if (!scrapingInProgress.add(vulnId)) return;
+
+    ApplicationManager.getApplication()
+        .executeOnPooledThread(
+            () -> {
+              try {
+                URL url = new URI("https://osv.dev/vulnerability/" + vulnId).toURL();
+                String html;
+                try (InputStream in = url.openStream()) {
+                  html = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                }
+
+                // Regex to find "Fixed" followed by a version number in the HTML
+                // Matches "Fixed" followed by tags/spaces and then a version number
+                // Simplified regex to avoid stack overflow warning
+                Pattern p =
+                    Pattern.compile(
+                        "Fixed(?:<[^>]+>|\\s){1,100}(\\d+\\.\\d+(?:\\.\\d+)?)",
+                        Pattern.CASE_INSENSITIVE);
+                Matcher m = p.matcher(html);
+                if (m.find()) {
+                  String ver = m.group(1);
+                  scrapedVersions.put(vulnId, ver);
+
+                  // Refresh UI if the currently selected item is still the same
+                  ApplicationManager.getApplication()
+                      .invokeLater(
+                          () -> {
+                            int selectedRow = resultsTable.getSelectedRow();
+                            if (selectedRow >= 0) {
+                              int modelRow = resultsTable.convertRowIndexToModel(selectedRow);
+                              if (modelRow < scanResults.size()
+                                  && scanResults.get(modelRow).equals(result)) {
+                                showDetails(result);
+                              }
+                            }
+                          });
+                }
+              } catch (IOException | URISyntaxException e) {
+                // Ignore scraping errors
+              } finally {
+                scrapingInProgress.remove(vulnId);
+              }
+            });
   }
 
   private String generateHtml(String bodyContent) {
@@ -331,71 +530,96 @@ public class SapoToolWindow {
   }
 
   private String getHighestSeverity(List<OsvVulnerability> vulns) {
-    if (vulns.isEmpty()) return "SAFE";
+    if (vulns.isEmpty()) return SAFE;
     int max = 0;
     for (OsvVulnerability v : vulns) {
       int l =
           switch (getSeverity(v)) {
-            case "CRITICAL" -> 4;
-            case "HIGH" -> 3;
-            case "MEDIUM" -> 2;
-            case "LOW" -> 1;
+            case CRITICAL -> 4;
+            case HIGH -> 3;
+            case MEDIUM -> 2;
+            case LOW -> 1;
             default -> 0;
           };
       if (l > max) max = l;
     }
     return switch (max) {
-      case 4 -> "CRITICAL";
-      case 3 -> "HIGH";
-      case 2 -> "MEDIUM";
-      case 1 -> "LOW";
-      default -> "SAFE";
+      case 4 -> CRITICAL;
+      case 3 -> HIGH;
+      case 2 -> MEDIUM;
+      case 1 -> LOW;
+      default -> SAFE;
     };
   }
 
   private Icon getSeverityIcon(String s) {
     return switch (s) {
-      case "CRITICAL" -> AllIcons.General.Error;
-      case "HIGH" -> AllIcons.General.Warning;
-      case "MEDIUM" -> AllIcons.General.Note;
-      case "LOW" -> AllIcons.General.Information;
+      case CRITICAL -> AllIcons.General.Error;
+      case HIGH -> AllIcons.General.Warning;
+      case MEDIUM -> AllIcons.General.Note;
+      case LOW -> AllIcons.General.Information;
       default -> AllIcons.General.InspectionsOK;
     };
   }
 
   private String getSeverity(OsvVulnerability v) {
-    if (v.databaseSpecific() != null) {
-      Object sev = v.databaseSpecific().get("severity");
-      if (sev instanceof String) return ((String) sev).toUpperCase();
+    String dbSeverity = getSeverityFromDatabaseSpecific(v);
+    if (dbSeverity != null) {
+      return dbSeverity;
     }
-    if (v.severity() != null) {
-      for (OsvVulnerability.Severity s : v.severity()) {
-        if ("CVSS_V3".equals(s.type()) || "CVSS_V2".equals(s.type())) {
-          try {
-            double sc = NUMBER_FORMAT.get().parse(s.score()).doubleValue();
-            if (sc >= 9.0) return "CRITICAL";
-            if (sc >= 7.0) return "HIGH";
-            if (sc >= 4.0) return "MEDIUM";
-            return "LOW";
-          } catch (ParseException | NumberFormatException ignored) {
-          }
-        }
-      }
-    }
-    return "MEDIUM";
+    return getSeverityFromCvss(v);
   }
 
-  private String findFixedVersion(OsvVulnerability v) {
-    if (v.affected() == null) return "Unknown";
+  private String getSeverityFromDatabaseSpecific(OsvVulnerability v) {
+    if (v.databaseSpecific() != null) {
+      Object sev = v.databaseSpecific().get("severity");
+      if (sev instanceof String string) {
+        return string.toUpperCase();
+      }
+    }
+    return null;
+  }
+
+  private String getSeverityFromCvss(OsvVulnerability v) {
+    if (v.severity() == null) {
+      return MEDIUM;
+    }
+    return v.severity().stream()
+        .filter(s -> "CVSS_V3".equals(s.type()) || "CVSS_V2".equals(s.type()))
+        .map(this::parseScore)
+        .filter(Objects::nonNull)
+        .findFirst()
+        .map(this::getSeverityLevel)
+        .orElse(MEDIUM);
+  }
+
+  private Double parseScore(OsvVulnerability.Severity s) {
+    try {
+      return numberFormat.parse(s.score()).doubleValue();
+    } catch (ParseException | NumberFormatException e) {
+      return null;
+    }
+  }
+
+  private String getSeverityLevel(double score) {
+    if (score >= 9.0) return CRITICAL;
+    if (score >= 7.0) return HIGH;
+    if (score >= 4.0) return MEDIUM;
+    return LOW;
+  }
+
+  private String findFixedVersion(OsvVulnerability v, String pkgName) {
+    if (v.affected() == null) return UNKNOWN;
     return v.affected().stream()
+        .filter(a -> a.pkg() == null || pkgName.equals(a.pkg().name()))
         .filter(a -> a.ranges() != null)
         .flatMap(a -> a.ranges().stream())
         .filter(r -> r.events() != null)
         .flatMap(r -> r.events().stream())
         .map(OsvVulnerability.Event::fixed)
-        .filter(java.util.Objects::nonNull)
+        .filter(Objects::nonNull)
         .findFirst()
-        .orElse("Unknown");
+        .orElse(UNKNOWN);
   }
 
   public JComponent getContent() {

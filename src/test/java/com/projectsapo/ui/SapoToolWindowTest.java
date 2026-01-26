@@ -13,14 +13,11 @@ import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.ui.jcef.JBCefBrowser;
 import com.projectsapo.model.OsvPackage;
-import com.projectsapo.model.OsvVulnerability;
 import com.projectsapo.service.VulnerabilityScannerService;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 import javax.swing.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,10 +35,8 @@ import org.mockito.quality.Strictness;
 class SapoToolWindowTest {
 
   @Mock private Project project;
-  @Mock private ToolWindow toolWindow;
   @Mock private VulnerabilityScannerService scannerService;
   @Mock private Application application;
-  @Mock private JBCefBrowser jbCefBrowser;
   @Mock private ModalityState modalityState;
 
   private MockedStatic<VulnerabilityScannerService> scannerServiceMock;
@@ -81,7 +76,7 @@ class SapoToolWindowTest {
               when(mock.getComponent()).thenReturn(new JPanel());
             });
 
-    sapoToolWindow = new SapoToolWindow(project, toolWindow);
+    sapoToolWindow = new SapoToolWindow(project);
   }
 
   @AfterEach
