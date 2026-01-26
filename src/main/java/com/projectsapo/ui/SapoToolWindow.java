@@ -11,9 +11,11 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Splitter;
 import com.intellij.ui.ColorUtil;
+import com.intellij.ui.JBColor;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.jcef.JBCefBrowser;
 import com.intellij.ui.table.JBTable;
+import com.intellij.util.IconUtil;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.projectsapo.model.OsvVulnerability;
@@ -60,6 +62,11 @@ public class SapoToolWindow {
   private static final String LOW = "LOW";
   private static final String SAFE = "SAFE";
   private static final String DIV_CLOSE = "</div>";
+
+  private static final JBColor COLOR_CRITICAL = new JBColor(0xB71C1C, 0xB71C1C);
+  private static final JBColor COLOR_HIGH = new JBColor(0xE65100, 0xE65100);
+  private static final JBColor COLOR_MEDIUM = new JBColor(0xF57F17, 0xF57F17);
+  private static final JBColor COLOR_LOW = new JBColor(0x33691E, 0x33691E);
 
   private final JPanel content;
   private final JBTable resultsTable;
@@ -554,11 +561,11 @@ public class SapoToolWindow {
 
   private Icon getSeverityIcon(String s) {
     return switch (s) {
-      case CRITICAL -> AllIcons.General.Error;
-      case HIGH -> AllIcons.General.Warning;
-      case MEDIUM -> AllIcons.General.Note;
-      case LOW -> AllIcons.General.Information;
-      default -> AllIcons.General.InspectionsOK;
+      case CRITICAL -> IconUtil.colorize(AllIcons.General.Error, COLOR_CRITICAL);
+      case HIGH -> IconUtil.colorize(AllIcons.General.Warning, COLOR_HIGH);
+      case MEDIUM -> IconUtil.colorize(AllIcons.General.Note, COLOR_MEDIUM);
+      case LOW -> IconUtil.colorize(AllIcons.General.Information, COLOR_LOW);
+      default -> IconUtil.colorize(AllIcons.General.InspectionsOK, COLOR_LOW);
     };
   }
 
