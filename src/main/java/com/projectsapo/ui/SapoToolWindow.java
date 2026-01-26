@@ -14,6 +14,7 @@ import com.intellij.ui.ColorUtil;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.jcef.JBCefBrowser;
+import com.intellij.ui.jcef.JBCefClient;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.IconUtil;
 import com.intellij.util.ui.JBUI;
@@ -89,25 +90,27 @@ public class SapoToolWindow {
     this.browser = new JBCefBrowser();
 
     // Open links in system browser
-    this.browser
-        .getJBCefClient()
-        .addRequestHandler(
-            new CefRequestHandlerAdapter() {
-              @Override
-              public boolean onBeforeBrowse(
-                  CefBrowser browser,
-                  CefFrame frame,
-                  CefRequest request,
-                  boolean userGesture,
-                  boolean isRedirect) {
-                if (userGesture) {
-                  BrowserUtil.browse(request.getURL());
-                  return true;
-                }
-                return false;
+    JBCefClient client = this.browser.getJBCefClient();
+    //noinspection ConstantConditions
+    if (client != null) {
+      client.addRequestHandler(
+          new CefRequestHandlerAdapter() {
+            @Override
+            public boolean onBeforeBrowse(
+                CefBrowser browser,
+                CefFrame frame,
+                CefRequest request,
+                boolean userGesture,
+                boolean isRedirect) {
+              if (userGesture) {
+                BrowserUtil.browse(request.getURL());
+                return true;
               }
-            },
-            this.browser.getCefBrowser());
+              return false;
+            }
+          },
+          this.browser.getCefBrowser());
+    }
 
     JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
     scanButton = new JButton("Scan Dependencies");
