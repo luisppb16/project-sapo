@@ -185,54 +185,6 @@ public class SapoToolWindow {
     sb.append("<div class='version'>Version: ").append(result.pkg().version()).append("</div>");
     sb.append("</div>");
 
-    Set<List<String>> chains = result.pkg().dependencyChains();
-    if (chains != null && !chains.isEmpty()) {
-      int pathIndex = 1;
-      for (List<String> chain : chains) {
-        if (chains.size() > 1) {
-          sb.append("<div class='path-header'>Path #").append(pathIndex++).append("</div>");
-        }
-        sb.append("<div class='snyk-chain'>");
-
-        // Root
-        sb.append("<div class='chain-item root'><span class='icon'>📦</span> ")
-            .append(project.getName())
-            .append("</div>");
-
-        // Intermediate
-        for (int i = 0; i < chain.size() - 1; i++) {
-          sb.append("<div class='chain-item intermediate' style='padding-left: ")
-              .append((i + 1) * 20)
-              .append("px;'>");
-          sb.append("<span class='connector'>└─</span> <span class='icon'>📄</span> ")
-              .append(chain.get(i));
-          sb.append("</div>");
-        }
-
-        // Target (Vulnerable)
-        String target = chain.get(chain.size() - 1);
-        sb.append("<div class='chain-item target' style='padding-left: ")
-            .append(chain.size() * 20)
-            .append("px;'>");
-        sb.append("<span class='connector'>└─</span> <span class='icon'>⚠️</span> <b>")
-            .append(target)
-            .append("</b>");
-        sb.append("</div>");
-
-        sb.append("</div>"); // End snyk-chain
-
-        // Remediation
-        if (chain.size() > 1) {
-          sb.append("<div class='remediation-box'>");
-          sb.append("<div class='remediation-title'>Remediation</div>");
-          sb.append("<p>Upgrade <code>")
-              .append(chain.get(0))
-              .append("</code> to remove this vulnerability.</p>");
-          sb.append("</div>");
-        }
-      }
-    }
-
     if (result.vulnerable()) {
       sb.append("<div class='section-title'>")
           .append(result.vulnerabilities().size())
@@ -281,6 +233,54 @@ public class SapoToolWindow {
       sb.append("<div class='safe-banner'>✅ No known vulnerabilities found.</div>");
     }
 
+    Set<List<String>> chains = result.pkg().dependencyChains();
+    if (chains != null && !chains.isEmpty()) {
+      int pathIndex = 1;
+      for (List<String> chain : chains) {
+        if (chains.size() > 1) {
+          sb.append("<div class='path-header'>Path #").append(pathIndex++).append("</div>");
+        }
+        sb.append("<div class='snyk-chain'>");
+
+        // Root
+        sb.append("<div class='chain-item root'><span class='icon'>📦</span> ")
+            .append(project.getName())
+            .append("</div>");
+
+        // Intermediate
+        for (int i = 0; i < chain.size() - 1; i++) {
+          sb.append("<div class='chain-item intermediate' style='padding-left: ")
+              .append((i + 1) * 20)
+              .append("px;'>");
+          sb.append("<span class='connector'>└─</span> <span class='icon'>📄</span> ")
+              .append(chain.get(i));
+          sb.append("</div>");
+        }
+
+        // Target (Vulnerable)
+        String target = chain.get(chain.size() - 1);
+        sb.append("<div class='chain-item target' style='padding-left: ")
+            .append(chain.size() * 20)
+            .append("px;'>");
+        sb.append("<span class='connector'>└─</span> <span class='icon'>⚠️</span> <b>")
+            .append(target)
+            .append("</b>");
+        sb.append("</div>");
+
+        sb.append("</div>"); // End snyk-chain
+
+        // Remediation
+        if (chain.size() > 1) {
+          sb.append("<div class='remediation-box'>");
+          sb.append("<div class='remediation-title'>Remediation</div>");
+          sb.append("<p>Upgrade <code>")
+              .append(chain.get(0))
+              .append("</code> to remove this vulnerability.</p>");
+          sb.append("</div>");
+        }
+      }
+    }
+
     browser.loadHTML(generateHtml(sb.toString()));
   }
 
@@ -298,6 +298,9 @@ public class SapoToolWindow {
         + textColor
         + "; line-height: 1.5; }"
         + "h1 { font-size: 20px; font-weight: 600; margin: 0; }"
+        + ".version { color: #888; margin-top: 4px; margin-bottom: 16px; font-size: 13px; }"
+        + ".section-title { font-weight: bold; margin-top: 16px; margin-bottom: 8px; font-size: 14px; }"
+        + ".safe-banner { background: rgba(67, 160, 71, 0.1); color: #2e7d32; padding: 12px; border-radius: 4px; font-weight: 600; margin-top: 16px; margin-bottom: 16px; }"
         + ".path-header { font-weight: bold; margin-top: 12px; margin-bottom: 4px; color: #2196f3; font-size: 14px; }"
         + ".snyk-chain { font-family: 'JetBrains Mono', monospace; margin: 8px 0; font-size: 13px; }"
         + ".chain-item { padding: 4px 0; display: flex; align-items: center; }"
