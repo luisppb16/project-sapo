@@ -24,13 +24,16 @@ import org.jetbrains.annotations.NotNull;
 /** Action to trigger vulnerability checks. */
 public class CheckVulnerabilitiesAction extends AnAction {
 
+  private static final String TITLE = "Project Sapo";
+  private static final String NOTIFICATION_GROUP_ID = "Project Sapo Notifications";
+
   @Override
   public void actionPerformed(@NotNull AnActionEvent e) {
     Project project = e.getProject();
     if (project == null) return;
 
     // Activate the ToolWindow if it exists
-    ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow("Project Sapo");
+    ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TITLE);
     if (toolWindow != null) {
       toolWindow.show();
     }
@@ -53,7 +56,6 @@ public class CheckVulnerabilitiesAction extends AnAction {
                   if (vulnerableCount > 0) {
                     showNotification(
                         project,
-                        "Project Sapo",
                         "Scan complete. Found vulnerabilities in "
                             + vulnerableCount
                             + " dependencies. Check the Project Sapo tool window for details.",
@@ -61,14 +63,12 @@ public class CheckVulnerabilitiesAction extends AnAction {
                   } else {
                     showNotification(
                         project,
-                        "Project Sapo",
                         "Scan complete. No vulnerabilities found.",
                         NotificationType.INFORMATION);
                   }
                 } catch (Exception ex) {
                    showNotification(
                         project,
-                        "Project Sapo",
                         "Scan failed: " + ex.getMessage(),
                         NotificationType.ERROR);
                 }
@@ -77,12 +77,12 @@ public class CheckVulnerabilitiesAction extends AnAction {
   }
 
   private void showNotification(
-      Project project, String title, String content, NotificationType type) {
+      Project project, String content, NotificationType type) {
     ApplicationManager.getApplication()
         .invokeLater(
             () -> {
               Notification notification =
-                  new Notification("Project Sapo Notifications", title, content, type);
+                  new Notification(NOTIFICATION_GROUP_ID, TITLE, content, type);
               Notifications.Bus.notify(notification, project);
             });
   }

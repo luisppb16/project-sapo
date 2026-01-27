@@ -91,7 +91,6 @@ public class SapoToolWindow {
 
     // Open links in system browser
     JBCefClient client = this.browser.getJBCefClient();
-    //noinspection ConstantConditions
     if (client != null) {
       client.addRequestHandler(
           new CefRequestHandlerAdapter() {

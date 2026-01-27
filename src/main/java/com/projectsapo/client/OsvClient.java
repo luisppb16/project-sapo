@@ -18,6 +18,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -89,10 +90,10 @@ public class OsvClient {
               return Optional.empty();
             }
 
-          } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-              Thread.currentThread().interrupt();
-            }
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Optional.empty();
+          } catch (IOException e) {
             return Optional.empty();
           }
         },
@@ -100,13 +101,13 @@ public class OsvClient {
   }
 
   public CompletableFuture<Optional<OsvBatchResponse>> checkDependencies(
-      java.util.List<OsvPackage> packages) {
+      List<OsvPackage> packages) {
     Objects.requireNonNull(packages, "Packages list cannot be null");
 
     return CompletableFuture.supplyAsync(
         () -> {
           try {
-            java.util.List<OsvQuery> queries =
+            List<OsvQuery> queries =
                 packages.stream().map(pkg -> new OsvQuery(pkg.version(), pkg)).toList();
 
             OsvBatchQuery batchQuery = new OsvBatchQuery(queries);
@@ -130,10 +131,10 @@ public class OsvClient {
               return Optional.empty();
             }
 
-          } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-              Thread.currentThread().interrupt();
-            }
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Optional.empty();
+          } catch (IOException e) {
             return Optional.empty();
           }
         },

@@ -47,9 +47,10 @@ import org.jetbrains.plugins.gradle.util.GradleConstants;
 public final class DependencyParser {
 
   private static final Logger LOG = Logger.getInstance(DependencyParser.class);
-  private static final Pattern JAR_VERSION_PATTERN = Pattern.compile("^(.+?)-(\\d[\\w\\.-]*)$");
+  private static final Pattern JAR_VERSION_PATTERN = Pattern.compile("^(.+?)-(\\d[\\w.-]*)$");
   // Matches Gradle cache path: .../modules-2/files-2.1/group/artifact/version/...
   private static final Pattern GRADLE_CACHE_PATTERN = Pattern.compile(".*/modules-2/files-2\\.1/([^/]+)/([^/]+)/([^/]+)/.*");
+  private static final String MAVEN_ECOSYSTEM = "Maven";
 
   private DependencyParser() {
     throw new UnsupportedOperationException("Utility class");
@@ -66,8 +67,8 @@ public final class DependencyParser {
         allPackages.addAll(parseMavenDependencies(mavenManager));
         isManagedProject = true;
       }
-    } catch (Throwable t) {
-      LOG.warn("Failed to parse Maven dependencies", t);
+    } catch (Exception e) {
+      LOG.warn("Failed to parse Maven dependencies", e);
     }
 
     // 2. Gradle: External System support
@@ -78,8 +79,8 @@ public final class DependencyParser {
         allPackages.addAll(parseGradleDependencies(gradleProjects));
         isManagedProject = true;
       }
-    } catch (Throwable t) {
-      LOG.warn("Failed to parse Gradle dependencies", t);
+    } catch (Exception e) {
+      LOG.warn("Failed to parse Gradle dependencies", e);
     }
 
     // If managed build systems are detected, we skip manual fallbacks to avoid redundant scanning
@@ -104,8 +105,8 @@ public final class DependencyParser {
                   return true;
                 });
       }
-    } catch (Throwable t) {
-      LOG.warn("Failed to parse module dependencies via OrderEnumerator", t);
+    } catch (Exception e) {
+      LOG.warn("Failed to parse module dependencies via OrderEnumerator", e);
     }
 
     // 4. Fallback: Project Libraries - Always run
@@ -117,8 +118,8 @@ public final class DependencyParser {
           allPackages.add(pkg);
         }
       }
-    } catch (Throwable t) {
-      LOG.warn("Failed to parse project libraries", t);
+    } catch (Exception e) {
+      LOG.warn("Failed to parse project libraries", e);
     }
 
     return deduplicateAndSort(allPackages);
@@ -135,7 +136,7 @@ public final class DependencyParser {
     return grouped.values().stream()
         .map(
             group -> {
-              OsvPackage representative = group.get(0);
+              OsvPackage representative = group.getFirst();
               Set<List<String>> allChains =
                   group.stream()
                       .map(OsvPackage::dependencyChains)
@@ -170,7 +171,7 @@ public final class DependencyParser {
     List<String> currentChain = new ArrayList<>(parentChain);
     currentChain.add(fullName);
 
-    result.add(new OsvPackage(fullName, "Maven", artifact.getVersion(), Set.of(currentChain)));
+    result.add(new OsvPackage(fullName, MAVEN_ECOSYSTEM, artifact.getVersion(), Set.of(currentChain)));
 
     for (MavenArtifactNode child : node.getDependencies()) {
       collectMavenDependencies(child, currentChain, result);
@@ -209,7 +210,7 @@ public final class DependencyParser {
       if (group != null && artifact != null && version != null) {
         String fullName = group + ":" + artifact;
         dependencies.add(
-            new OsvPackage(fullName, "Maven", version, Set.of(List.of(fullName))));
+            new OsvPackage(fullName, MAVEN_ECOSYSTEM, version, Set.of(List.of(fullName))));
       }
     }
   }
@@ -218,60 +219,68 @@ public final class DependencyParser {
     String name = library.getName();
     if (name == null) return null;
 
-    // 1. Try parsing from Library Name
+    OsvPackage pkg = parseFromLibraryName(name);
+    if (pkg != null) {
+      return pkg;
+    }
+
+    return parseFromLibraryFiles(library);
+  }
+
+  private static OsvPackage parseFromLibraryName(String name) {
     String cleanName = name;
     if (cleanName.startsWith("Gradle: ")) {
-        cleanName = cleanName.substring(8);
+      cleanName = cleanName.substring(8);
     } else if (cleanName.startsWith("Maven: ")) {
-        cleanName = cleanName.substring(7);
+      cleanName = cleanName.substring(7);
     }
 
     String[] parts = cleanName.split(":");
     if (parts.length >= 3) {
       String fullName = parts[0] + ":" + parts[1];
       String version = parts[2];
-      
-      // Handle artifacts with classifiers or packaging (e.g. @aar)
+
+      // Handle artifacts with classifiers or packaging (e.g., @aar)
       int atIndex = version.indexOf('@');
       if (atIndex > 0) {
-          version = version.substring(0, atIndex);
+        version = version.substring(0, atIndex);
       }
-      
+
       if (!parts[0].isBlank() && !parts[1].isBlank()) {
-          return new OsvPackage(
-              fullName, "Maven", version, Set.of(List.of(fullName)));
+        return new OsvPackage(fullName, MAVEN_ECOSYSTEM, version, Set.of(List.of(fullName)));
       }
     }
+    return null;
+  }
 
-    // 2. Fallback: Try parsing from Jar Filename or Path
+  private static OsvPackage parseFromLibraryFiles(Library library) {
     VirtualFile[] files = library.getFiles(OrderRootType.CLASSES);
     for (VirtualFile file : files) {
-        String path = file.getPath();
-        
-        // Try Gradle Cache Pattern
-        Matcher cacheMatcher = GRADLE_CACHE_PATTERN.matcher(path);
-        if (cacheMatcher.matches()) {
-            String group = cacheMatcher.group(1);
-            String artifact = cacheMatcher.group(2);
-            String version = cacheMatcher.group(3);
-            return new OsvPackage(group + ":" + artifact, "Maven", version, Set.of(List.of(group + ":" + artifact)));
-        }
+      String path = file.getPath();
 
-        String filename = file.getName();
-        // Remove extension
-        int dotIndex = filename.lastIndexOf('.');
-        if (dotIndex > 0) {
-            filename = filename.substring(0, dotIndex);
-        }
-        
-        Matcher matcher = JAR_VERSION_PATTERN.matcher(filename);
-        if (matcher.matches()) {
-            String artifact = matcher.group(1);
-            String version = matcher.group(2);
-            return new OsvPackage(artifact, "Maven", version, Set.of(List.of(artifact)));
-        }
+      // Try Gradle Cache Pattern
+      Matcher cacheMatcher = GRADLE_CACHE_PATTERN.matcher(path);
+      if (cacheMatcher.matches()) {
+        String group = cacheMatcher.group(1);
+        String artifact = cacheMatcher.group(2);
+        String version = cacheMatcher.group(3);
+        return new OsvPackage(group + ":" + artifact, MAVEN_ECOSYSTEM, version, Set.of(List.of(group + ":" + artifact)));
+      }
+
+      String filename = file.getName();
+      // Remove extension
+      int dotIndex = filename.lastIndexOf('.');
+      if (dotIndex > 0) {
+        filename = filename.substring(0, dotIndex);
+      }
+
+      Matcher matcher = JAR_VERSION_PATTERN.matcher(filename);
+      if (matcher.matches()) {
+        String artifact = matcher.group(1);
+        String version = matcher.group(2);
+        return new OsvPackage(artifact, MAVEN_ECOSYSTEM, version, Set.of(List.of(artifact)));
+      }
     }
-
     return null;
   }
 

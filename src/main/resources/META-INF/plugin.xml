@@ -44,5 +44,7 @@
                     icon="/icons/pluginIcon.svg"
                     anchor="bottom"
                     factoryClass="com.projectsapo.ui.SapoToolWindowFactory"/>
+        <notificationGroup id="Project Sapo Notifications"
+                           displayType="BALLOON"/>
     </extensions>
 </idea-plugin>
