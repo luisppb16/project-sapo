@@ -49,6 +49,7 @@
     <depends>org.jetbrains.idea.maven</depends>
     <depends>com.intellij.gradle</depends>
     <depends>org.intellij.groovy</depends>
+    <depends optional="true" config-file="vulnspotter-jcef.xml">com.intellij.modules.jcef</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <applicationService serviceImplementation="com.luisppb16.vulnspotter.settings.VulnSpotterSettings"/>

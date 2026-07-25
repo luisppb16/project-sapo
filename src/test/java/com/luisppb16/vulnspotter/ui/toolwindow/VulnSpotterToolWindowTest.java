@@ -16,7 +16,6 @@ import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
-import com.intellij.ui.jcef.JBCefApp;
 import com.intellij.util.messages.MessageBus;
 import com.intellij.util.messages.MessageBusConnection;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
@@ -78,16 +77,11 @@ class VulnSpotterToolWindowTest {
         .when(application)
         .invokeLater(any(Runnable.class));
 
-    // Force the Swing fallback so JCEF's static initializer (which needs the application registry)
-    // is never loaded under the mock application.
-    VulnSpotterToolWindow.jcefSupported = () -> false;
-
     vulnSpotterToolWindow = new VulnSpotterToolWindow(project);
   }
 
   @AfterEach
   void tearDown() {
-    VulnSpotterToolWindow.jcefSupported = JBCefApp::isSupported;
     scannerServiceMock.close();
     applicationManagerMock.close();
     modalityStateMock.close();

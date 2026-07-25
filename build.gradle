@@ -12,7 +12,7 @@ plugins {
 }
 
 group = 'com.luisppb16'
-version = '1.0.0'
+version = '1.0.1'
 
 repositories {
     mavenCentral()
@@ -27,7 +27,7 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok:1.18.42'
 
     // JSON - Jackson
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.21.1'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.21.5'
 
     // CVSS base-score calculation from OSV severity vectors (v2/v3/v3.1/v4)
     implementation 'us.springett:cvss-calculator:1.5.1'

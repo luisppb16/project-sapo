@@ -1,0 +1,13 @@
+<!--
+  ~ ******************************************************************************
+  ~ Copyright (c)  2026 Luis Paolo Pepe Barra (@LuisPPB16).
+  ~ All rights reserved.
+  ~ ******************************************************************************
+  -->
+
+<idea-plugin>
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceInterface="com.luisppb16.vulnspotter.ui.toolwindow.DetailsPanelFactory"
+                            serviceImplementation="com.luisppb16.vulnspotter.ui.toolwindow.jcef.JcefDetailsPanelFactory"/>
+    </extensions>
+</idea-plugin>

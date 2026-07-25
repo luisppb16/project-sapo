@@ -1,9 +1,9 @@
 # VulnSpotter
 
 **VulnSpotter** is a dependency vulnerability scanner for **IntelliJ IDEA**, powered by the [OSV.dev](https://osv.dev)
-database. It scans your project's Gradle and Maven dependencies, flags known vulnerabilities in a dedicated tool
-window and directly in the editor, and gives you actionable details — severity, fixed versions, and official
-advisories — without leaving the IDE.
+database. It scans your project's Gradle and Maven dependencies, flags known vulnerabilities in a dedicated tool window
+and directly in the editor, and gives you actionable details — severity, fixed versions, and official advisories —
+without leaving the IDE.
 
 ## 🚀 Features
 
@@ -17,8 +17,8 @@ advisories — without leaving the IDE.
   filters, search by package or CVE, and a context menu (open in OSV.dev, copy coordinate, copy fix version, copy
   upgrade snippet, ignore dependency).
 - **Accurate severity** — CVSS v2/v3/v3.1/v4 vectors from OSV are actually parsed and scored (via
-  `us.springett:cvss-calculator`); `database_specific` labels are only a fallback. Vulnerabilities without severity
-  data are shown as **Unknown**, never hidden.
+  `us.springett:cvss-calculator`); `database_specific` labels are only a fallback. Vulnerabilities without severity data
+  are shown as **Unknown**, never hidden.
 - **Fixed versions** — Remediation versions computed from OSV `ECOSYSTEM`/`SEMVER` ranges with Maven-style version
   semantics (`5.3.9.RELEASE` == `5.3.9`, `2.0.0-RC1` < `2.0.0`), preferring stable releases in the same major branch.
 - **Report export** — Export scan results to **HTML**, **PDF**, **CSV**, **JSON**, **SARIF 2.1.0** and **Markdown**
@@ -26,18 +26,18 @@ advisories — without leaving the IDE.
 - **Notifications** — Instant IDE notifications about security findings and scan failures.
 - **Auto-scan after project sync** — Optionally re-scan after every Gradle or Maven sync. Opt-in and **disabled by
   default**.
-- **Settings page** — **Settings → Tools → VulnSpotter**: auto-scan, cache duration, minimum severity shown, and
-  ignored CVE/GHSA ids.
+- **Settings page** — **Settings → Tools → VulnSpotter**: auto-scan, cache duration, minimum severity shown, and ignored
+  CVE/GHSA ids.
 - **Exclusions** — Ignore specific dependencies via a `.vulnspotterignore` file in the project root (glob patterns
   supported) or ignore individual CVEs from the Settings page.
 
 ## 📋 Requirements
 
-| Requirement     | Version                                        |
-|-----------------|------------------------------------------------|
-| IntelliJ IDEA   | 2025.1+ (since-build `251`, no upper bound)      |
-| Java            | 21                                             |
-| Bundled plugins | Maven, Gradle, Groovy                          |
+| Requirement     | Version                                     |
+|-----------------|---------------------------------------------|
+| IntelliJ IDEA   | 2025.1+ (since-build `251`, no upper bound) |
+| Java            | 21                                          |
+| Bundled plugins | Maven, Gradle, Groovy                       |
 
 ## 🛠 Installation
 
@@ -45,18 +45,18 @@ advisories — without leaving the IDE.
 2. Search for **"VulnSpotter"**.
 3. Click **Install** and restart the IDE.
 
-Alternatively, install from disk: build the plugin (see [Build](#-build)) and use
-**Settings → Plugins → ⚙️ → Install Plugin from Disk...** with the generated ZIP.
+Alternatively, install from disk: build the plugin (see [Build](#-build)) and use **Settings → Plugins → ⚙️ → Install
+Plugin from Disk...** with the generated ZIP.
 
 ## 📖 Usage
 
 1. Open your Gradle or Maven project in IntelliJ IDEA.
-2. Open the **VulnSpotter** tool window and run a scan (or enable auto-scan after project sync in
-   **Settings → Tools → VulnSpotter**).
+2. Open the **VulnSpotter** tool window and run a scan (or enable auto-scan after project sync in **Settings → Tools →
+   VulnSpotter**).
 3. Review the dependency list — vulnerable packages are highlighted and sorted by severity. Use the filters and the
    search field (package name or CVE id) to focus on what matters.
-4. Select a dependency to see its vulnerabilities: severity, CVSS score, summary, affected ranges, fixed versions,
-   CVE aliases, and links to the official advisories.
+4. Select a dependency to see its vulnerabilities: severity, CVSS score, summary, affected ranges, fixed versions, CVE
+   aliases, and links to the official advisories.
 5. Fix directly from the editor: vulnerable declarations in `pom.xml`/`build.gradle` are underlined — press
    <kbd>Alt</kbd>+<kbd>Enter</kbd> and apply *Update &lt;artifact&gt; to &lt;version&gt;*.
 6. Export the results to HTML, PDF, CSV, JSON, SARIF or Markdown if you need to share a report.
@@ -73,15 +73,14 @@ Maven:com.example:*        # glob patterns are supported
 com.mycompany.*
 ```
 
-Individual vulnerabilities (by CVE/GHSA id, aliases included) can be ignored from
-**Settings → Tools → VulnSpotter**.
+Individual vulnerabilities (by CVE/GHSA id, aliases included) can be ignored from **Settings → Tools → VulnSpotter**.
 
 ## 🏛 Architecture
 
 The codebase follows a hexagonal-style layered architecture under the base package `com.luisppb16.vulnspotter`:
 
-- **ui/** — IntelliJ integration surface: actions (`action`), editor annotator and quick fix (`annotator`), and the
-  tool window (`toolwindow`).
+- **ui/** — IntelliJ integration surface: actions (`action`), editor annotator and quick fix (`annotator`), and the tool
+  window (`toolwindow`).
 - **application/service** — Use-case orchestration (`VulnerabilityScannerService`).
 - **domain/** — Core model and logic: `model` (OSV records and `PackageKey`) and `service` (`SeverityAnalyzer`,
   `VersionUtil`, `FixedVersionResolver`).
@@ -107,8 +106,8 @@ release workflow signs and publishes the plugin to the **JetBrains Marketplace**
 
 ## 🔐 Privacy & Network Behavior
 
-- VulnSpotter calls `api.osv.dev` only: `POST /v1/querybatch` to look up dependencies and `GET /v1/vulns/<id>` to
-  fetch the details of the vulnerabilities found.
+- VulnSpotter calls `api.osv.dev` only: `POST /v1/querybatch` to look up dependencies and `GET /v1/vulns/<id>` to fetch
+  the details of the vulnerabilities found.
 - Data sent: dependency coordinates only (`name`, `ecosystem`, `version`).
 - Project source code is **never** sent. No scraping, telemetry or third-party endpoints.
 - Automatic scan after project sync is **opt-in** and disabled by default.

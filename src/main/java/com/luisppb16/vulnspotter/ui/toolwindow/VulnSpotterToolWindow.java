@@ -33,9 +33,6 @@ import com.intellij.ui.SearchTextField;
 import com.intellij.ui.awt.RelativePoint;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBScrollPane;
-import com.intellij.ui.jcef.JBCefApp;
-import com.intellij.ui.jcef.JBCefBrowser;
-import com.intellij.ui.jcef.JBCefClient;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.IconUtil;
 import com.intellij.util.ui.JBUI;
@@ -68,21 +65,15 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
-import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.MenuEvent;
 import javax.swing.event.MenuListener;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableRowSorter;
-import org.cef.browser.CefBrowser;
-import org.cef.browser.CefFrame;
-import org.cef.handler.CefRequestHandlerAdapter;
-import org.cef.network.CefRequest;
 
 /**
  * Tool window UI for VulnSpotter: results table with severity ranking plus an HTML details panel
@@ -98,22 +89,12 @@ public final class VulnSpotterToolWindow implements Disposable {
   private static final JBColor COLOR_LOW = new JBColor(0x33691E, 0x9CCC65);
   private static final long SCAN_TIMEOUT_SECONDS = 300;
 
-  /**
-   * Resolves whether JCEF is available for the HTML details panel. Defaults to {@link
-   * JBCefApp#isSupported()} but is package-private and mutable so unit tests can force the Swing
-   * {@code JEditorPane} fallback without loading JCEF's static initializer, which needs the
-   * application {@code RegistryManager} service that is absent under a mock application. A method
-   * reference does not initialize the referenced class, so assigning it here is safe.
-   */
-  static volatile BooleanSupplier jcefSupported = JBCefApp::isSupported;
-
   private final JPanel content;
   private final CardLayout cardLayout = new CardLayout();
   private final JPanel mainPanel;
   private final JBTable resultsTable;
   private final DefaultTableModel tableModel;
-  private final JBCefBrowser browser; // null when JCEF is unavailable
-  private final JEditorPane fallbackPane; // used when JCEF is unavailable
+  private final DetailsPanel detailsPanel;
   private final Project project;
   private final JButton scanButton;
   private final JButton cancelButton;
@@ -130,45 +111,11 @@ public final class VulnSpotterToolWindow implements Disposable {
     this.project = project;
     this.content = new JPanel(new BorderLayout());
 
-    if (jcefSupported.getAsBoolean()) {
-      this.browser = new JBCefBrowser();
-      this.fallbackPane = null;
-      Disposer.register(this, browser);
-
-      // Open links in system browser
-      JBCefClient client = this.browser.getJBCefClient();
-      if (client != null) {
-        client.addRequestHandler(
-            new CefRequestHandlerAdapter() {
-              @Override
-              public boolean onBeforeBrowse(
-                  CefBrowser browser,
-                  CefFrame frame,
-                  CefRequest request,
-                  boolean userGesture,
-                  boolean isRedirect) {
-                if (userGesture) {
-                  BrowserUtil.browse(request.getURL());
-                  return true;
-                }
-                return false;
-              }
-            },
-            this.browser.getCefBrowser());
-      }
-    } else {
-      this.browser = null;
-      JEditorPane pane = new JEditorPane();
-      pane.setContentType("text/html");
-      pane.setEditable(false);
-      pane.addHyperlinkListener(
-          e -> {
-            if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED && e.getURL() != null) {
-              BrowserUtil.browse(e.getURL());
-            }
-          });
-      this.fallbackPane = pane;
-    }
+    DetailsPanelFactory factory =
+        ApplicationManager.getApplication().getService(DetailsPanelFactory.class);
+    DetailsPanel panel = factory != null ? factory.create() : null;
+    this.detailsPanel = panel != null ? panel : new SwingDetailsPanel();
+    Disposer.register(this, detailsPanel);
 
     JPanel toolbar = new JPanel(new BorderLayout());
     toolbar.setBorder(JBUI.Borders.empty(4, 8));
@@ -283,8 +230,7 @@ public final class VulnSpotterToolWindow implements Disposable {
     leftPanel.add(new JBScrollPane(resultsTable), BorderLayout.CENTER);
 
     splitter.setFirstComponent(leftPanel);
-    splitter.setSecondComponent(
-        browser != null ? browser.getComponent() : new JBScrollPane(fallbackPane));
+    splitter.setSecondComponent(detailsPanel.getComponent());
 
     mainPanel = new JPanel(cardLayout);
     mainPanel.add(createEmptyStatePanel(), "EMPTY");
@@ -377,12 +323,7 @@ public final class VulnSpotterToolWindow implements Disposable {
   }
 
   private void loadDetailsHtml(String html) {
-    if (browser != null) {
-      browser.loadHTML(html);
-    } else if (fallbackPane != null) {
-      fallbackPane.setText(html);
-      fallbackPane.setCaretPosition(0);
-    }
+    detailsPanel.loadHtml(html);
   }
 
   private JPanel createEmptyStatePanel() {
