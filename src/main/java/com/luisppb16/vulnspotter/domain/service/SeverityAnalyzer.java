@@ -45,13 +45,13 @@ public final class SeverityAnalyzer {
       if (cvss != null) {
         return cvss.calculateScore().getBaseScore();
       }
-    } catch (RuntimeException e) {
+    } catch (RuntimeException _) {
       // Malformed vector; fall through to the plain-number fallback.
     }
     try {
       double value = Double.parseDouble(trimmed);
       return (value >= 0.0 && value <= 10.0) ? value : null;
-    } catch (NumberFormatException e) {
+    } catch (NumberFormatException _) {
       return null;
     }
   }

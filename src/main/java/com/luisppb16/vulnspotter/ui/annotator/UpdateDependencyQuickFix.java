@@ -143,7 +143,7 @@ public class UpdateDependencyQuickFix implements IntentionAction {
             XmlElementFactory.getInstance(project)
                 .createTagFromText("<version>" + targetVersion + "</version>");
         dependencyTag.addSubTag(newVersion, false);
-      } catch (IncorrectOperationException e) {
+      } catch (IncorrectOperationException _) {
         notify(
             project,
             "Could not insert a <version> for "

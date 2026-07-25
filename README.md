@@ -35,8 +35,8 @@ without leaving the IDE.
 
 | Requirement     | Version                                     |
 |-----------------|---------------------------------------------|
-| IntelliJ IDEA   | 2025.1+ (since-build `251`, no upper bound) |
-| Java            | 21                                          |
+| IntelliJ IDEA   | 2026.2+ (since-build `262`, no upper bound) |
+| Java            | 25                                          |
 | Bundled plugins | Maven, Gradle, Groovy                       |
 
 ## 🛠 Installation
@@ -90,8 +90,7 @@ The codebase follows a hexagonal-style layered architecture under the base packa
   (`VulnSpotterConfigurable`).
 - **util/** — Shared helpers (`HtmlEscaper`).
 
-**Stack:** Java 21, IntelliJ Platform Gradle Plugin 2.18.1, Gradle 9.6.1, Jackson, cvss-calculator, OpenHTMLtoPDF,
-Lombok.
+**Stack:** Java 25, IntelliJ Platform Gradle Plugin 2.18.1, Gradle 9.6.1, Jackson, cvss-calculator, OpenHTMLtoPDF.
 
 ## 🔨 Build
 
@@ -113,6 +112,16 @@ release workflow signs and publishes the plugin to the **JetBrains Marketplace**
 - Automatic scan after project sync is **opt-in** and disabled by default.
 
 ## 📝 Changelog
+
+### 1.0.1
+
+- Migrated to **Java 25** and **IntelliJ Platform 2026.2** (since-build `262`). The minimum supported IDE is now
+  IntelliJ IDEA 2026.2; users of 2025.1–2026.1 should keep using 1.0.0.
+- Refactored to use **sealed types**, **pattern matching for switch**, **record patterns**, **text blocks** and
+  **unnamed variables**.
+- Removed unused Lombok dependency. Bumped Mockito to 5.23.0 and JUnit Jupiter to 5.14.4 for JDK 25 compatibility.
+- Sealed `VersionItem` type replaces the previous `List<Object>` token stream in `VersionUtil` for exhaustive, type-safe
+  version comparison.
 
 ### 1.0.0
 

@@ -126,7 +126,7 @@ public class OsvClient {
   private static void sleepBackoff(int attempt) {
     try {
       Thread.sleep(RETRY_BACKOFF_MS * attempt);
-    } catch (InterruptedException ie) {
+    } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
     }
   }

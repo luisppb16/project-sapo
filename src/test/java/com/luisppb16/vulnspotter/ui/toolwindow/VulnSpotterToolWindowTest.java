@@ -114,11 +114,11 @@ class VulnSpotterToolWindowTest {
 
   private JButton findScanButton(JComponent component) {
     for (Component c : component.getComponents()) {
-      if (c instanceof JButton && "Scan Dependencies".equals(((JButton) c).getText())) {
-        return (JButton) c;
+      if (c instanceof JButton b && "Scan Dependencies".equals(b.getText())) {
+        return b;
       }
-      if (c instanceof JComponent) {
-        JButton btn = findScanButton((JComponent) c);
+      if (c instanceof JComponent jc) {
+        JButton btn = findScanButton(jc);
         if (btn != null) return btn;
       }
     }

@@ -22,10 +22,6 @@ repositories {
 }
 
 dependencies {
-    // Lombok
-    compileOnly 'org.projectlombok:lombok:1.18.42'
-    annotationProcessor 'org.projectlombok:lombok:1.18.42'
-
     // JSON - Jackson
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.21.5'
 
@@ -39,9 +35,9 @@ dependencies {
     // JUnit 4 is kept on the test classpath because the IntelliJ Platform test framework
     // (used via the bundled test infrastructure) references org.junit.rules.TestRule at runtime.
     testImplementation 'junit:junit:4.13.2'
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
-    testImplementation 'org.mockito:mockito-core:5.11.0'
-    testImplementation 'org.mockito:mockito-junit-jupiter:5.11.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.14.4'
+    testImplementation 'org.mockito:mockito-core:5.23.0'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.23.0'
     testImplementation 'org.assertj:assertj-core:3.27.7'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
@@ -58,23 +54,25 @@ dependencies {
     }
 
     intellijPlatform {
-        intellijIdeaCommunity '2025.1'
+        intellijIdea '2026.2'
         bundledPlugin 'org.jetbrains.idea.maven'
         bundledPlugin 'com.intellij.gradle'
         bundledPlugin 'org.intellij.groovy'
+        bundledModule 'intellij.platform.ui.jcef'
+        bundledModule 'intellij.libraries.jcef'
     }
 }
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
-    options.release = 21
-    options.compilerArgs << "-Xlint:all" << "-Werror" << "-Xlint:-processing" << "-Xlint:-unchecked"
+    options.release = 25
+    options.compilerArgs << "-Xlint:all" << "-Werror" << "-Xlint:-unchecked"
 }
 
 intellijPlatform {
@@ -105,7 +103,7 @@ test {
     maxHeapSize = '512m'
     jvmArgs('-Xshare:off')
     javaLauncher = javaToolchains.launcherFor {
-        languageVersion = JavaLanguageVersion.of(21)
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 

@@ -83,6 +83,22 @@ public final class VulnSpotterToolWindow implements Disposable {
 
   private static final String UNKNOWN = FixedVersionResolver.UNKNOWN;
   private static final String DIV_CLOSE = "</div>";
+
+  private static final String COPY_TO_CLIPBOARD_JS =
+      """
+      function copyToClipboard(text) {
+        const el = document.createElement('textarea');
+        el.value = text;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        const btn = event.target;
+        const originalText = btn.innerText;
+        btn.innerText = 'Copied!';
+        setTimeout(() => btn.innerText = originalText, 2000);
+      }
+      """;
   private static final JBColor COLOR_CRITICAL = new JBColor(0xB71C1C, 0xEF5350);
   private static final JBColor COLOR_HIGH = new JBColor(0xE65100, 0xFFA726);
   private static final JBColor COLOR_MEDIUM = new JBColor(0xF57F17, 0xFFEE58);
@@ -676,19 +692,19 @@ public final class VulnSpotterToolWindow implements Disposable {
 
     Throwable cause =
         ex instanceof CompletionException && ex.getCause() != null ? ex.getCause() : ex;
-    if (cause instanceof CancellationException) {
+    if (cause instanceof CancellationException _) {
       statusLabel.setText("Scan cancelled");
       return;
     }
-    String message;
-    if (cause instanceof TimeoutException) {
-      message =
-          "The scan timed out after "
-              + SCAN_TIMEOUT_SECONDS
-              + "s. Try again or narrow the project.";
-    } else {
-      message = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
-    }
+    String message =
+        switch (cause) {
+          case TimeoutException _ ->
+              "The scan timed out after "
+                  + SCAN_TIMEOUT_SECONDS
+                  + "s. Try again or narrow the project.";
+          default ->
+              cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
+        };
     statusLabel.setText("Scan failed: " + message);
     NotificationGroupManager.getInstance()
         .getNotificationGroup("VulnSpotter Notifications")
@@ -1164,18 +1180,7 @@ public final class VulnSpotterToolWindow implements Disposable {
         + "code { font-family: 'JetBrains Mono', monospace; background: rgba(0,0,0,0.05); padding: 2px 4px; border-radius: 3px; }"
         + "</style>"
         + "<script>"
-        + "function copyToClipboard(text) {"
-        + "  const el = document.createElement('textarea');"
-        + "  el.value = text;"
-        + "  document.body.appendChild(el);"
-        + "  el.select();"
-        + "  document.execCommand('copy');"
-        + "  document.body.removeChild(el);"
-        + "  const btn = event.target;"
-        + "  const originalText = btn.innerText;"
-        + "  btn.innerText = 'Copied!';"
-        + "  setTimeout(() => btn.innerText = originalText, 2000);"
-        + "}"
+        + COPY_TO_CLIPBOARD_JS
         + "</script>"
         + "</head><body>"
         + bodyContent

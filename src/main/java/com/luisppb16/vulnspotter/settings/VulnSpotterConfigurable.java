@@ -16,7 +16,6 @@ import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
@@ -105,6 +104,6 @@ public class VulnSpotterConfigurable implements Configurable {
     return Arrays.stream(ignoredCvesArea.getText().split("\\R"))
         .map(String::trim)
         .filter(s -> !s.isEmpty())
-        .collect(Collectors.toList());
+        .toList();
   }
 }

@@ -10,7 +10,7 @@
     <name>VulnSpotter</name>
     <vendor email="ironkrozz@gmail.com" url="https://github.com/luisppb16">Luis Pepe</vendor>
 
-    <idea-version since-build="251"/>
+    <idea-version since-build="262"/>
 
     <description><![CDATA[
     A smart vulnerability scanner for your project dependencies.
@@ -32,6 +32,12 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>1.0.1</h3>
+        <ul>
+            <li><b>Java 25 / IntelliJ Platform 2026.2:</b> Migrated to Java 25 (JBR 25). The minimum supported IDE is now IntelliJ IDEA 2026.2 (since-build 262). Users of 2025.1–2026.1 should keep using VulnSpotter 1.0.0.</li>
+            <li><b>Modern Java idioms:</b> Refactored to use sealed types, pattern matching for switch, record patterns, text blocks and unnamed variables where they improve clarity.</li>
+            <li><b>Dependencies:</b> Removed unused Lombok. Bumped Mockito to 5.23.0 and JUnit Jupiter to 5.14.4 for JDK 25 compatibility.</li>
+        </ul>
         <h3>1.0.0</h3>
         <ul>
             <li><b>Initial Release:</b> First release of VulnSpotter on the JetBrains Marketplace.</li>

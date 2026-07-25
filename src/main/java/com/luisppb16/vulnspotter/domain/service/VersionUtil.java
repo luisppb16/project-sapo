@@ -89,8 +89,8 @@ public final class VersionUtil {
   /** True for pre-release versions (alpha/beta/milestone/rc/preview/pre/snapshot qualifiers). */
   public static boolean isPrerelease(String version) {
     if (version == null || version.isBlank()) return false;
-    for (Object item : parse(version)) {
-      if (item instanceof String qual && qualifierRank(qual) < qualifierRank("")) {
+    for (VersionItem item : parse(version)) {
+      if (item instanceof QualifierItem qual && qualifierRank(qual.value()) < qualifierRank("")) {
         return true;
       }
     }
@@ -114,13 +114,13 @@ public final class VersionUtil {
    *     greater than v2.
    */
   public static int compareVersions(String v1, String v2) {
-    List<Object> items1 = parse(v1);
-    List<Object> items2 = parse(v2);
+    List<VersionItem> items1 = parse(v1);
+    List<VersionItem> items2 = parse(v2);
 
     int length = Math.max(items1.size(), items2.size());
     for (int i = 0; i < length; i++) {
-      Object a = i < items1.size() ? items1.get(i) : null;
-      Object b = i < items2.size() ? items2.get(i) : null;
+      VersionItem a = i < items1.size() ? items1.get(i) : null;
+      VersionItem b = i < items2.size() ? items2.get(i) : null;
       int comp = compareItems(a, b);
       if (comp != 0) {
         return comp;
@@ -130,9 +130,9 @@ public final class VersionUtil {
   }
 
   /** Tokenize a version into numeric ({@link BigInteger}) and qualifier ({@link String}) items. */
-  private static List<Object> parse(String version) {
+  private static List<VersionItem> parse(String version) {
     String v = version == null ? "" : version.trim().toLowerCase(Locale.ROOT);
-    List<Object> items = new ArrayList<>();
+    List<VersionItem> items = new ArrayList<>();
     StringBuilder token = new StringBuilder();
     boolean digits = false;
 
@@ -140,14 +140,14 @@ public final class VersionUtil {
       char c = v.charAt(i);
       if (Character.isDigit(c)) {
         if (!token.isEmpty() && !digits) {
-          items.add(normalizeQualifier(token.toString()));
+          items.add(new QualifierItem(normalizeQualifier(token.toString())));
           token.setLength(0);
         }
         digits = true;
         token.append(c);
       } else if (Character.isLetter(c)) {
         if (!token.isEmpty() && digits) {
-          items.add(new BigInteger(token.toString()));
+          items.add(new NumberItem(new BigInteger(token.toString())));
           token.setLength(0);
         }
         digits = false;
@@ -156,22 +156,27 @@ public final class VersionUtil {
         // Separator ('.', '-', '_', '+', etc.)
         if (!token.isEmpty()) {
           items.add(
-              digits ? new BigInteger(token.toString()) : normalizeQualifier(token.toString()));
+              digits
+                  ? new NumberItem(new BigInteger(token.toString()))
+                  : new QualifierItem(normalizeQualifier(token.toString())));
           token.setLength(0);
         }
         digits = false;
       }
     }
     if (!token.isEmpty()) {
-      items.add(digits ? new BigInteger(token.toString()) : normalizeQualifier(token.toString()));
+      items.add(
+          digits
+              ? new NumberItem(new BigInteger(token.toString()))
+              : new QualifierItem(normalizeQualifier(token.toString())));
     }
 
     // Trim trailing items equivalent to the plain release (".0", ".RELEASE", ".Final", "ga")
     while (!items.isEmpty()) {
-      Object last = items.get(items.size() - 1);
+      VersionItem last = items.get(items.size() - 1);
       boolean nullValue =
-          (last instanceof BigInteger n && n.signum() == 0)
-              || (last instanceof String s && s.isEmpty());
+          (last instanceof NumberItem n && n.value().signum() == 0)
+              || (last instanceof QualifierItem s && s.value().isEmpty());
       if (!nullValue) break;
       items.remove(items.size() - 1);
     }
@@ -203,26 +208,34 @@ public final class VersionUtil {
     };
   }
 
-  private static int compareItems(Object a, Object b) {
+  private static int compareItems(VersionItem a, VersionItem b) {
     if (a == null && b == null) return 0;
     if (a == null) return -compareItems(b, null);
 
-    if (a instanceof BigInteger numA) {
-      if (b == null) return numA.signum(); // trailing zeros equal the shorter version
-      if (b instanceof BigInteger numB) return numA.compareTo(numB);
-      return 1; // numbers are newer than qualifiers: 1.0.1 > 1.0.alpha
-    }
-
-    String qualA = (String) a;
-    if (b == null) {
-      return Integer.compare(qualifierRank(qualA), qualifierRank(""));
-    }
-    if (b instanceof BigInteger) {
-      return -1;
-    }
-    String qualB = (String) b;
-    int rankCompare = Integer.compare(qualifierRank(qualA), qualifierRank(qualB));
-    if (rankCompare != 0) return rankCompare;
-    return qualifierRank(qualA) == 8 ? qualA.compareTo(qualB) : 0;
+    return switch (a) {
+      case NumberItem numA ->
+          switch (b) {
+            case null -> numA.value().signum();
+            case NumberItem numB -> numA.value().compareTo(numB.value());
+            case QualifierItem _ -> 1; // numbers are newer than qualifiers: 1.0.1 > 1.0.alpha
+          };
+      case QualifierItem qualA ->
+          switch (b) {
+            case null -> Integer.compare(qualifierRank(qualA.value()), qualifierRank(""));
+            case NumberItem _ -> -1;
+            case QualifierItem qualB -> {
+              int rankCompare =
+                  Integer.compare(qualifierRank(qualA.value()), qualifierRank(qualB.value()));
+              if (rankCompare != 0) yield rankCompare;
+              yield qualifierRank(qualA.value()) == 8 ? qualA.value().compareTo(qualB.value()) : 0;
+            }
+          };
+    };
   }
+
+  private sealed interface VersionItem permits NumberItem, QualifierItem {}
+
+  private record NumberItem(BigInteger value) implements VersionItem {}
+
+  private record QualifierItem(String value) implements VersionItem {}
 }
